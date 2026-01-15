@@ -3,53 +3,93 @@ const db = require('../database');
 /**
  * Run database migrations to add new columns if they don't exist
  */
-const runMigrations = () => {
-  return new Promise((resolve, reject) => {
-    const dbInstance = db.getDb();
-    
-    dbInstance.serialize(() => {
-      // Check if user_id column exists in comparisons table
-      dbInstance.all(`
-        PRAGMA table_info(comparisons)
-      `, (err, columns) => {
-        if (err) {
-          console.error('Error checking table info:', err);
-          return reject(err);
+const runMigrations = async () => {
+  const dbType = db.getDbType();
+  const dbInstance = db.getDb();
+  
+  if (dbType === 'postgres') {
+    // PostgreSQL: Check if user_id column exists
+    try {
+      const result = await db.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'comparisons' AND column_name = 'user_id'
+      `);
+      
+      if (result.rows.length === 0) {
+        console.log('Adding user_id column to comparisons table...');
+        try {
+          await db.query(`
+            ALTER TABLE comparisons ADD COLUMN user_id INTEGER REFERENCES users(id)
+          `);
+          console.log('Successfully added user_id column');
+        } catch (err) {
+          // PostgreSQL error code 42701 is "duplicate_column"
+          if (err.code !== '42701' && !err.message.includes('duplicate')) {
+            console.error('Error adding user_id column:', err);
+            throw err;
+          }
         }
         
-        const hasUserId = columns.some(col => col.name === 'user_id');
-        
-        if (!hasUserId) {
-          console.log('Adding user_id column to comparisons table...');
-          dbInstance.run(`
-            ALTER TABLE comparisons ADD COLUMN user_id INTEGER REFERENCES users(id)
-          `, (err) => {
-            if (err) {
-              console.error('Error adding user_id column:', err);
-              // Don't fail if column already exists
-              if (!err.message.includes('duplicate column')) {
-                return reject(err);
-              }
-            } else {
-              console.log('Successfully added user_id column');
-            }
-            
-            // Create index for user_id if it doesn't exist
+        // Create index
+        try {
+          await db.query(`
+            CREATE INDEX IF NOT EXISTS idx_comparisons_user_id ON comparisons(user_id)
+          `);
+        } catch (err) {
+          console.error('Error creating index:', err);
+        }
+      }
+    } catch (err) {
+      console.error('Migration error:', err);
+      throw err;
+    }
+  } else {
+    // SQLite: Use PRAGMA to check columns
+    return new Promise((resolve, reject) => {
+      dbInstance.serialize(() => {
+        dbInstance.all(`
+          PRAGMA table_info(comparisons)
+        `, (err, columns) => {
+          if (err) {
+            console.error('Error checking table info:', err);
+            return reject(err);
+          }
+          
+          const hasUserId = columns.some(col => col.name === 'user_id');
+          
+          if (!hasUserId) {
+            console.log('Adding user_id column to comparisons table...');
             dbInstance.run(`
-              CREATE INDEX IF NOT EXISTS idx_comparisons_user_id ON comparisons(user_id)
+              ALTER TABLE comparisons ADD COLUMN user_id INTEGER REFERENCES users(id)
             `, (err) => {
               if (err) {
-                console.error('Error creating index:', err);
+                console.error('Error adding user_id column:', err);
+                // Don't fail if column already exists
+                if (!err.message.includes('duplicate column')) {
+                  return reject(err);
+                }
+              } else {
+                console.log('Successfully added user_id column');
               }
-              resolve();
+              
+              // Create index for user_id if it doesn't exist
+              dbInstance.run(`
+                CREATE INDEX IF NOT EXISTS idx_comparisons_user_id ON comparisons(user_id)
+              `, (err) => {
+                if (err) {
+                  console.error('Error creating index:', err);
+                }
+                resolve();
+              });
             });
-          });
-        } else {
-          resolve();
-        }
+          } else {
+            resolve();
+          }
+        });
       });
     });
-  });
+  }
 };
 
 module.exports = {
