@@ -24,11 +24,19 @@ const buildIndexPath = path.join(buildPath, 'index.html');
 const fs = require('fs');
 
 if (fs.existsSync(buildIndexPath)) {
-  // Serve static files from React build
-  app.use(express.static(buildPath));
+  // Serve static files from React build (but skip API routes)
+  app.use(express.static(buildPath, {
+    // Don't serve static files for API routes
+    index: false
+  }));
   
-  // Serve React app for all non-API routes
-  app.get('*', (req, res) => {
+  // Serve React app for all non-API routes (catch-all must be last)
+  // Important: This must come after all API routes
+  app.get('*', (req, res, next) => {
+    // Skip API routes - they should have been handled already
+    if (req.path.startsWith('/api')) {
+      return next();
+    }
     res.sendFile(buildIndexPath);
   });
 } else {
