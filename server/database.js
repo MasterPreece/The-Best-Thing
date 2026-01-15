@@ -168,6 +168,47 @@ const createTables = async () => {
       await client.query(`
         CREATE INDEX IF NOT EXISTS idx_comparisons_user_id ON comparisons(user_id)
       `);
+
+      // Comments table - for discussions on items
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS comments (
+          id SERIAL PRIMARY KEY,
+          item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+          user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+          user_session_id VARCHAR(255),
+          content TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_comments_item_id ON comments(item_id)
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_comments_user_id ON comments(user_id)
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at DESC)
+      `);
+
+      // Collections table - for saving favorite comparisons
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS collections (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          comparison_id INTEGER NOT NULL REFERENCES comparisons(id) ON DELETE CASCADE,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(user_id, comparison_id)
+        )
+      `);
+
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_collections_user_id ON collections(user_id)
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_collections_comparison_id ON collections(comparison_id)
+      `);
       
       console.log('PostgreSQL tables created successfully');
     } finally {
@@ -257,14 +298,44 @@ const createTables = async () => {
                             db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_user_session_id ON comparisons(user_session_id)`, () => {
                               db.run(`CREATE INDEX IF NOT EXISTS idx_users_comparisons ON users(comparisons_count DESC)`, () => {
                                 db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_user_id ON comparisons(user_id)`, () => {
-                                  // Enable foreign keys for SQLite
-                                  db.run(`PRAGMA foreign_keys = ON`, (err) => {
-                                    if (err) {
-                                      console.error('Error enabling foreign keys:', err);
-                                      return reject(err);
-                                    }
-                                    console.log('SQLite tables created successfully');
-                                    resolve();
+                                  // Comments table
+                                  db.run(`CREATE TABLE IF NOT EXISTS comments (
+                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+                                    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                                    user_session_id TEXT,
+                                    content TEXT NOT NULL,
+                                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                                  )`, () => {
+                                    db.run(`CREATE INDEX IF NOT EXISTS idx_comments_item_id ON comments(item_id)`, () => {
+                                      db.run(`CREATE INDEX IF NOT EXISTS idx_comments_user_id ON comments(user_id)`, () => {
+                                        db.run(`CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at DESC)`, () => {
+                                          // Collections table
+                                          db.run(`CREATE TABLE IF NOT EXISTS collections (
+                                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                                            comparison_id INTEGER NOT NULL REFERENCES comparisons(id) ON DELETE CASCADE,
+                                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                            UNIQUE(user_id, comparison_id)
+                                          )`, () => {
+                                            db.run(`CREATE INDEX IF NOT EXISTS idx_collections_user_id ON collections(user_id)`, () => {
+                                              db.run(`CREATE INDEX IF NOT EXISTS idx_collections_comparison_id ON collections(comparison_id)`, () => {
+                                                // Enable foreign keys for SQLite
+                                                db.run(`PRAGMA foreign_keys = ON`, (err) => {
+                                                  if (err) {
+                                                    console.error('Error enabling foreign keys:', err);
+                                                    return reject(err);
+                                                  }
+                                                  console.log('SQLite tables created successfully');
+                                                  resolve();
+                                                });
+                                              });
+                                            });
+                                          });
+                                        });
+                                      });
+                                    });
                                   });
                                 });
                               });

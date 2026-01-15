@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { RankingSkeleton } from './SkeletonLoader';
 import './Leaderboard.css';
 
 const Leaderboard = () => {
@@ -40,14 +41,7 @@ const Leaderboard = () => {
   };
 
   if (loading && leaderboard.length === 0) {
-    return (
-      <div className="leaderboard-container">
-        <div className="loading-state">
-          <div className="loading-spinner"></div>
-          <div className="loading-text">Loading leaderboard...</div>
-        </div>
-      </div>
-    );
+    return <RankingSkeleton count={10} />;
   }
 
   if (error && leaderboard.length === 0) {

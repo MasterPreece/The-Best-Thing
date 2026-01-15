@@ -5,6 +5,8 @@ const itemsController = require('../controllers/items');
 const leaderboardController = require('../controllers/leaderboard');
 const authController = require('../controllers/auth');
 const statsController = require('../controllers/stats');
+const commentsController = require('../controllers/comments');
+const collectionsController = require('../controllers/collections');
 const { authenticate, optionalAuthenticate } = require('../utils/auth');
 
 // Comparisons
@@ -28,6 +30,17 @@ router.get('/auth/stats', authenticate, authController.getUserStats);
 
 // Stats
 router.get('/stats', statsController.getGlobalStats);
+
+// Comments
+router.get('/items/:itemId/comments', commentsController.getComments);
+router.post('/items/:itemId/comments', optionalAuthenticate, commentsController.createComment);
+router.delete('/comments/:commentId', authenticate, commentsController.deleteComment);
+
+// Collections (Favorites)
+router.get('/collections', authenticate, collectionsController.getCollection);
+router.post('/collections/:comparisonId', authenticate, collectionsController.addToCollection);
+router.delete('/collections/:comparisonId', authenticate, collectionsController.removeFromCollection);
+router.get('/collections/check/:comparisonId', optionalAuthenticate, collectionsController.checkInCollection);
 
 // Health check
 router.get('/health', (req, res) => {

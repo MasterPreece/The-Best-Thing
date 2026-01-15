@@ -156,6 +156,168 @@ const getFeaturedArticles = async (count = 10) => {
 };
 
 /**
+ * Get articles from a specific Wikipedia category
+ * Fetches more articles than needed, then sorts by pageviews (most viewed first)
+ * Returns top N most viewed articles
+ */
+const getArticlesFromCategory = async (categoryName, count = 50) => {
+  try {
+    let allArticles = [];
+    let continueToken = null;
+    const fullCategoryName = categoryName.startsWith('Category:') ? categoryName : `Category:${categoryName}`;
+    
+    // Fetch more articles than needed to get good pageview data
+    // Fetch at least 3x the count to ensure we have enough popular articles
+    const fetchTarget = Math.max(count * 3, 200); // At least 200 articles, or 3x the count
+    
+    console.log(`   Fetching up to ${fetchTarget} articles from ${fullCategoryName} to find top ${count} most viewed...`);
+    
+    // Fetch articles in batches (Wikipedia API limit is 500 per request)
+    while (allArticles.length < fetchTarget) {
+      const params = {
+        action: 'query',
+        format: 'json',
+        list: 'categorymembers',
+        cmtitle: fullCategoryName,
+        cmnamespace: 0, // Only main articles
+        cmlimit: Math.min(500, fetchTarget - allArticles.length),
+        cmtype: 'page',
+        redirects: 1
+      };
+      
+      // Add continuation token if we have one
+      if (continueToken) {
+        params.cmcontinue = continueToken;
+      }
+      
+      const response = await axios.get(WIKIPEDIA_API, {
+        params,
+        headers: {
+          'User-Agent': 'TheBestThing/1.0 (https://github.com/MasterPreece/The-Best-Thing; contact@example.com)'
+        }
+      });
+
+      const members = response.data.query?.categorymembers || [];
+      const newArticles = members.map(m => m.title);
+      allArticles = [...allArticles, ...newArticles];
+      
+      // Check if there are more results
+      if (response.data.continue && response.data.continue.cmcontinue && allArticles.length < fetchTarget) {
+        continueToken = response.data.continue.cmcontinue;
+        // Be respectful with rate limiting
+        await new Promise(resolve => setTimeout(resolve, API_DELAY));
+      } else {
+        break; // No more results or we have enough
+      }
+    }
+    
+    // Remove duplicates
+    const uniqueArticles = [...new Set(allArticles)];
+    
+    if (uniqueArticles.length === 0) {
+      return [];
+    }
+    
+    // If we have fewer articles than requested, just return them all
+    if (uniqueArticles.length <= count) {
+      return uniqueArticles;
+    }
+    
+    // Get pageviews for articles using Wikipedia's Pageviews REST API
+    // This API provides view counts for articles
+    console.log(`   Getting pageviews for ${uniqueArticles.length} articles to find most viewed...`);
+    
+    const articlesWithViews = await getArticlesWithPageviews(uniqueArticles);
+    
+    // Sort by pageviews (highest first) and take top N
+    articlesWithViews.sort((a, b) => (b.views || 0) - (a.views || 0));
+    
+    const topArticles = articlesWithViews
+      .slice(0, count)
+      .map(item => item.title)
+      .filter(title => title); // Remove any null/undefined
+    
+    console.log(`   Found top ${topArticles.length} most viewed articles (out of ${uniqueArticles.length})`);
+    
+    return topArticles;
+  } catch (error) {
+    console.error(`Error fetching articles from category ${categoryName}:`, error.message);
+    // Fallback: return first N articles if pageview fetching fails
+    return [];
+  }
+};
+
+/**
+ * Get pageview counts for a list of articles using Wikipedia's REST API
+ * Uses the last 60 days of pageviews to determine popularity
+ */
+const getArticlesWithPageviews = async (articleTitles) => {
+  const PAGEVIEWS_API = 'https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia/all-access/user';
+  
+  // Calculate date range (last 60 days for better data)
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - 60);
+  
+  const formatDate = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}${month}${day}`;
+  };
+  
+  const start = formatDate(startDate);
+  const end = formatDate(endDate);
+  
+  const articlesWithViews = [];
+  
+  // Process articles in smaller batches to avoid rate limiting
+  const batchSize = 10;
+  for (let i = 0; i < articleTitles.length; i += batchSize) {
+    const batch = articleTitles.slice(i, i + batchSize);
+    
+    // Fetch pageviews for each article in the batch
+    for (const title of batch) {
+      try {
+        // Format title: replace spaces with underscores and URL encode
+        const formattedTitle = title.replace(/ /g, '_');
+        const encodedTitle = encodeURIComponent(formattedTitle);
+        
+        // Use daily granularity to get better data
+        const url = `${PAGEVIEWS_API}/${encodedTitle}/daily/${start}/${end}`;
+        
+        const response = await axios.get(url, {
+          headers: {
+            'User-Agent': 'TheBestThing/1.0 (https://github.com/MasterPreece/The-Best-Thing; contact@example.com)'
+          },
+          timeout: 10000 // 10 second timeout
+        });
+        
+        // Sum up all pageviews for the period
+        const items = response.data.items || [];
+        const totalViews = items.reduce((sum, item) => sum + (item.views || 0), 0);
+        
+        articlesWithViews.push({ title, views: totalViews });
+      } catch (error) {
+        // If pageview API fails for an article, assign 0 views
+        // (article might not exist, be too new, be deleted, or API might be rate-limited)
+        articlesWithViews.push({ title, views: 0 });
+      }
+      
+      // Rate limiting between requests
+      await new Promise(resolve => setTimeout(resolve, API_DELAY));
+    }
+    
+    // Extra delay between batches
+    if (i + batchSize < articleTitles.length) {
+      await new Promise(resolve => setTimeout(resolve, API_DELAY * 2));
+    }
+  }
+  
+  return articlesWithViews;
+};
+
+/**
  * Fetch page information including image
  * Tries multiple methods to get an image
  */
@@ -518,6 +680,9 @@ module.exports = {
   checkAndFetchIfNeeded,
   fetchMoreItems,
   fetchPopularItemsOnly,
-  getPopularArticles
+  getPopularArticles,
+  getArticlesFromCategory,
+  fetchPageInfo,
+  getRandomArticles
 };
 

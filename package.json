@@ -11,7 +11,8 @@
     "start": "node server/index.js",
     "seed": "node server/scripts/seed-wikipedia.js",
     "seed:large": "node server/scripts/seed-wikipedia.js 500",
-    "seed:popular": "node server/scripts/seed-popular.js"
+    "seed:popular": "node server/scripts/seed-popular.js",
+    "seed:categories": "node server/scripts/seed-categories.js"
   },
   "keywords": [
     "meme",

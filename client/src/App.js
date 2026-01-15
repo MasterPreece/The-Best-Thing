@@ -4,12 +4,15 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Comparison from './components/Comparison';
 import Rankings from './components/Rankings';
 import Leaderboard from './components/Leaderboard';
+import ItemDetail from './components/ItemDetail';
 import AuthModal from './components/AuthModal';
+import DonateModal from './components/DonateModal';
 import './App.css';
 
 function AppContent() {
   const [userSessionId, setUserSessionId] = useState(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showDonateModal, setShowDonateModal] = useState(false);
   const { user, logout, isAuthenticated } = useAuth();
 
   useEffect(() => {
@@ -38,6 +41,9 @@ function AppContent() {
               <Link to="/" className="nav-link">Compare</Link>
               <Link to="/rankings" className="nav-link">Rankings</Link>
               <Link to="/leaderboard" className="nav-link">Leaderboard</Link>
+              <button className="nav-donate" onClick={() => setShowDonateModal(true)}>
+                💝 Donate
+              </button>
               {isAuthenticated ? (
                 <>
                   <span className="nav-user">👤 {user?.username}</span>
@@ -55,6 +61,7 @@ function AppContent() {
             <Route path="/" element={<Comparison userSessionId={userSessionId} />} />
             <Route path="/rankings" element={<Rankings />} />
             <Route path="/leaderboard" element={<Leaderboard />} />
+            <Route path="/items/:id" element={<ItemDetail />} />
           </Routes>
         </main>
 
@@ -69,6 +76,10 @@ function AppContent() {
             initialMode="login"
             sessionId={userSessionId}
           />
+        )}
+
+        {showDonateModal && (
+          <DonateModal onClose={() => setShowDonateModal(false)} />
         )}
       </div>
     </Router>

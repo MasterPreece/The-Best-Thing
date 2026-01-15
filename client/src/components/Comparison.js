@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import Toast from './Toast';
 import AccountPrompt from './AccountPrompt';
+import { ComparisonSkeleton } from './SkeletonLoader';
+import { animateNumber } from '../utils/numberAnimation';
 import './Comparison.css';
 
 const Comparison = ({ userSessionId }) => {
@@ -17,6 +19,7 @@ const Comparison = ({ userSessionId }) => {
   const [comparisonCount, setComparisonCount] = useState(0);
   const [globalStats, setGlobalStats] = useState(null);
   const { token, isAuthenticated } = useAuth();
+  const statsRef = useRef(null);
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -31,6 +34,13 @@ const Comparison = ({ userSessionId }) => {
     setSelected(null);
     setError(null);
     setItemStats({ item1: null, item2: null });
+    
+    // Reset opacity if it was faded out
+    const grid = document.querySelector('.comparison-grid');
+    if (grid) {
+      grid.style.opacity = '1';
+      grid.style.transition = 'opacity 0.3s';
+    }
     
     try {
       const response = await axios.get('/api/comparison');
@@ -96,7 +106,28 @@ const Comparison = ({ userSessionId }) => {
   const fetchGlobalStats = async () => {
     try {
       const response = await axios.get('/api/stats');
-      setGlobalStats(response.data);
+      const newStats = response.data;
+      
+      // Animate number changes if stats already exist
+      if (globalStats && statsRef.current) {
+        const elements = {
+          totalComparisons: statsRef.current.querySelector('.stat-total-comparisons'),
+          totalItems: statsRef.current.querySelector('.stat-total-items'),
+          todayComparisons: statsRef.current.querySelector('.stat-today-comparisons')
+        };
+        
+        if (elements.totalComparisons && newStats.totalComparisons !== globalStats.totalComparisons) {
+          animateNumber(elements.totalComparisons, globalStats.totalComparisons, newStats.totalComparisons, 800);
+        }
+        if (elements.totalItems && newStats.totalItems !== globalStats.totalItems) {
+          animateNumber(elements.totalItems, globalStats.totalItems, newStats.totalItems, 800);
+        }
+        if (elements.todayComparisons && newStats.todayComparisons !== globalStats.todayComparisons) {
+          animateNumber(elements.todayComparisons, globalStats.todayComparisons, newStats.todayComparisons, 800);
+        }
+      }
+      
+      setGlobalStats(newStats);
     } catch (error) {
       console.error('Error fetching global stats:', error);
       // Non-critical, continue without stats
@@ -131,15 +162,23 @@ const Comparison = ({ userSessionId }) => {
 
       showToast('Vote recorded! Loading next comparison...', 'success');
 
-      // Wait a moment to show the selection, then fetch new comparison
+      // Wait a moment to show the selection with animation, then fetch new comparison
       setTimeout(() => {
-        fetchComparison();
-        fetchGlobalStats(); // Update global stats after vote
-        // Update comparison count
-        if (!isAuthenticated && userSessionId) {
-          checkComparisonCount();
+        // Add a brief fade-out effect before loading next
+        if (document.querySelector('.comparison-grid')) {
+          document.querySelector('.comparison-grid').style.opacity = '0.5';
+          document.querySelector('.comparison-grid').style.transition = 'opacity 0.3s';
         }
-      }, 1000);
+        
+        setTimeout(() => {
+          fetchComparison();
+          fetchGlobalStats(); // Update global stats after vote
+          // Update comparison count
+          if (!isAuthenticated && userSessionId) {
+            checkComparisonCount();
+          }
+        }, 200);
+      }, 800);
     } catch (error) {
       console.error('Error submitting vote:', error);
       const errorMessage = error.response?.status === 400
@@ -250,14 +289,7 @@ const Comparison = ({ userSessionId }) => {
   };
 
   if (loading && !items) {
-    return (
-      <div className="comparison-container">
-        <div className="loading-state">
-          <div className="loading-spinner"></div>
-          <div className="loading-text">Loading comparison...</div>
-        </div>
-      </div>
-    );
+    return <ComparisonSkeleton />;
   }
 
   if (error && !items) {
@@ -319,16 +351,16 @@ const Comparison = ({ userSessionId }) => {
           </span>
         </p>
         {globalStats && (
-          <div className="global-stats">
+          <div className="global-stats" ref={statsRef}>
             <div className="stat-badge">
-              <strong>{globalStats.totalComparisons.toLocaleString()}</strong> total votes
+              <strong className="stat-total-comparisons">{globalStats.totalComparisons.toLocaleString()}</strong> total votes
             </div>
             <div className="stat-badge">
-              <strong>{globalStats.totalItems.toLocaleString()}</strong> items ranked
+              <strong className="stat-total-items">{globalStats.totalItems.toLocaleString()}</strong> items ranked
             </div>
             {globalStats.todayComparisons > 0 && (
               <div className="stat-badge highlight">
-                <strong>{globalStats.todayComparisons.toLocaleString()}</strong> today
+                <strong className="stat-today-comparisons">{globalStats.todayComparisons.toLocaleString()}</strong> today
               </div>
             )}
           </div>
@@ -369,6 +401,7 @@ const Comparison = ({ userSessionId }) => {
                 src={items.item1.image_url}
                 alt={items.item1.title}
                 className="item-image"
+                loading="lazy"
                 onError={(e) => {
                   e.target.src = 'https://via.placeholder.com/400x300?text=No+Image';
                 }}
@@ -432,6 +465,7 @@ const Comparison = ({ userSessionId }) => {
                 src={items.item2.image_url}
                 alt={items.item2.title}
                 className="item-image"
+                loading="lazy"
                 onError={(e) => {
                   e.target.src = 'https://via.placeholder.com/400x300?text=No+Image';
                 }}
