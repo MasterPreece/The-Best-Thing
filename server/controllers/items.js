@@ -4,6 +4,8 @@ const getRankings = (req, res) => {
   let limit = parseInt(req.query.limit) || 100;
   const offset = parseInt(req.query.offset) || 0;
   
+  console.log(`[Rankings] Requested limit: ${req.query.limit}, parsed limit: ${limit}, offset: ${offset}`);
+  
   // Cap at 10,000 to prevent performance issues, but allow "all" to work
   if (limit > 10000) {
     limit = 10000;
@@ -22,6 +24,8 @@ const getRankings = (req, res) => {
         console.error('Error fetching rankings:', err);
         return res.status(500).json({ error: 'Failed to fetch rankings' });
       }
+      
+      console.log(`[Rankings] Fetched all items: ${rows.length} total`);
       
       res.json({
         rankings: rows,
@@ -42,9 +46,13 @@ const getRankings = (req, res) => {
         return res.status(500).json({ error: 'Failed to fetch rankings' });
       }
       
+      console.log(`[Rankings] Fetched ${rows.length} items with limit ${limit}`);
+      
       // Get total count for pagination info
       dbInstance.get(`SELECT COUNT(*) as total FROM items`, [], (err, countRow) => {
         const total = countRow ? countRow.total : rows.length;
+        
+        console.log(`[Rankings] Total items in database: ${total}`);
         
         res.json({
           rankings: rows,
