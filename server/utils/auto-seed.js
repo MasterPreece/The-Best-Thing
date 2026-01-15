@@ -145,92 +145,131 @@ const getFeaturedArticles = async (count = 10) => {
  * Auto-seed database if empty (runs in background)
  */
 const autoSeedIfEmpty = async () => {
-  const dbInstance = db.getDb();
-  
-  return new Promise((resolve) => {
-    dbInstance.get('SELECT COUNT(*) as count FROM items', async (err, row) => {
-      if (err) {
-        console.error('Error checking item count:', err);
-        return resolve();
+  try {
+    const dbType = db.getDbType();
+    let itemCount = 0;
+    
+    if (dbType === 'postgres') {
+      // Use PostgreSQL query helper
+      const result = await db.query('SELECT COUNT(*) as count FROM items');
+      itemCount = result.rows[0] ? parseInt(result.rows[0].count) : 0;
+    } else {
+      // Use SQLite callback style
+      const dbInstance = db.getDb();
+      const row = await new Promise((resolve, reject) => {
+        dbInstance.get('SELECT COUNT(*) as count FROM items', (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        });
+      });
+      itemCount = row ? row.count : 0;
+    }
+    
+    if (itemCount > 0) {
+      console.log(`Database has ${itemCount} items. No seeding needed.`);
+      return;
+    }
+    
+    console.log('Database is empty. Starting auto-seed...');
+    console.log(`Fetching ${INITIAL_SEED_COUNT} Wikipedia pages...`);
+    
+    // Mix of popular and random articles for initial seed
+    console.log('Fetching mix of popular and random articles...');
+    const popularTitles = await getPopularArticles(Math.ceil(INITIAL_SEED_COUNT / 2));
+    const randomTitles = await getRandomArticles(Math.floor(INITIAL_SEED_COUNT / 2));
+    const titles = [...popularTitles, ...randomTitles];
+    
+    if (titles.length === 0) {
+      console.log('No articles retrieved for seeding');
+      return;
+    }
+    
+    let inserted = 0;
+    let skipped = 0;
+    
+    // Fetch and insert pages (limit to avoid blocking server start)
+    const seedLimit = Math.min(20, titles.length); // Seed max 20 on startup
+    
+    for (let i = 0; i < seedLimit; i++) {
+      if (i > 0) {
+        await new Promise(resolve => setTimeout(resolve, API_DELAY));
       }
       
-      const itemCount = row ? row.count : 0;
+      const pageInfo = await fetchPageInfo(titles[i]);
       
-      if (itemCount > 0) {
-        console.log(`Database has ${itemCount} items. No seeding needed.`);
-        return resolve();
+      if (!pageInfo) {
+        skipped++;
+        continue;
       }
       
-      console.log('Database is empty. Starting auto-seed...');
-      console.log(`Fetching ${INITIAL_SEED_COUNT} Wikipedia pages...`);
-      
-      try {
-        // Mix of popular and random articles for initial seed
-        console.log('Fetching mix of popular and random articles...');
-        const popularTitles = await getPopularArticles(Math.ceil(INITIAL_SEED_COUNT / 2));
-        const randomTitles = await getRandomArticles(Math.floor(INITIAL_SEED_COUNT / 2));
-        const titles = [...popularTitles, ...randomTitles];
-        
-        if (titles.length === 0) {
-          console.log('No articles retrieved for seeding');
-          return resolve();
-        }
-        
-        let inserted = 0;
-        let skipped = 0;
-        
-        // Fetch and insert pages (limit to avoid blocking server start)
-        const seedLimit = Math.min(20, titles.length); // Seed max 20 on startup
-        
-        for (let i = 0; i < seedLimit; i++) {
-          if (i > 0) {
-            await new Promise(resolve => setTimeout(resolve, API_DELAY));
-          }
-          
-          const pageInfo = await fetchPageInfo(titles[i]);
-          
-          if (!pageInfo) {
-            skipped++;
-            continue;
-          }
-          
-          // Check if exists and insert
-          await new Promise((resolveInsert) => {
-            dbInstance.get(`
-              SELECT id FROM items 
-              WHERE title = ? OR (wikipedia_id IS NOT NULL AND wikipedia_id = ?)
-              LIMIT 1
-            `, [pageInfo.title, pageInfo.wikipediaId], (err, existingItem) => {
-              if (err || existingItem) {
-                skipped++;
-                return resolveInsert();
-              }
-              
-              dbInstance.run(`
-                INSERT OR IGNORE INTO items (wikipedia_id, title, image_url, description)
-                VALUES (?, ?, ?, ?)
-              `, [pageInfo.wikipediaId, pageInfo.title, pageInfo.imageUrl, pageInfo.description], function(insertErr) {
-                if (!insertErr && this.changes > 0) {
-                  inserted++;
-                } else {
-                  skipped++;
-                }
-                resolveInsert();
-              });
-            });
+      // Check if exists and insert
+      let existingItem = null;
+      if (dbType === 'postgres') {
+        const result = await db.query(`
+          SELECT id FROM items 
+          WHERE title = $1 OR (wikipedia_id IS NOT NULL AND wikipedia_id = $2)
+          LIMIT 1
+        `, [pageInfo.title, pageInfo.wikipediaId]);
+        existingItem = result.rows[0] || null;
+      } else {
+        const dbInstance = db.getDb();
+        existingItem = await new Promise((resolve, reject) => {
+          dbInstance.get(`
+            SELECT id FROM items 
+            WHERE title = ? OR (wikipedia_id IS NOT NULL AND wikipedia_id = ?)
+            LIMIT 1
+          `, [pageInfo.title, pageInfo.wikipediaId], (err, row) => {
+            if (err) reject(err);
+            else resolve(row || null);
           });
-        }
-        
-        console.log(`Auto-seed complete! Added ${inserted} items, skipped ${skipped}.`);
-        console.log(`Database will continue to grow automatically as users vote.`);
-        
-      } catch (error) {
-        console.error('Error during auto-seed:', error);
+        });
       }
       
-      resolve();
-    });
-  });
+      if (existingItem) {
+        skipped++;
+        continue;
+      }
+      
+      // Insert item
+      if (dbType === 'postgres') {
+        const result = await db.query(`
+          INSERT INTO items (wikipedia_id, title, image_url, description)
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (title) DO NOTHING
+          RETURNING id
+        `, [pageInfo.wikipediaId, pageInfo.title, pageInfo.imageUrl, pageInfo.description]);
+        
+        if (result.rowCount > 0) {
+          inserted++;
+        } else {
+          skipped++;
+        }
+      } else {
+        const dbInstance = db.getDb();
+        const result = await new Promise((resolve, reject) => {
+          dbInstance.run(`
+            INSERT OR IGNORE INTO items (wikipedia_id, title, image_url, description)
+            VALUES (?, ?, ?, ?)
+          `, [pageInfo.wikipediaId, pageInfo.title, pageInfo.imageUrl, pageInfo.description], function(insertErr) {
+            if (insertErr) reject(insertErr);
+            else resolve({ changes: this.changes });
+          });
+        });
+        
+        if (result.changes > 0) {
+          inserted++;
+        } else {
+          skipped++;
+        }
+      }
+    }
+    
+    console.log(`Auto-seed complete! Added ${inserted} items, skipped ${skipped}.`);
+    console.log(`Database will continue to grow automatically as users vote.`);
+    
+  } catch (error) {
+    console.error('Error during auto-seed:', error);
+  }
 };
 
 module.exports = {
