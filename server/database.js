@@ -360,77 +360,130 @@ const getDb = () => {
   }
   
   if (USE_POSTGRES) {
+    // Ensure db is a Pool instance
+    if (!db || typeof db.query !== 'function') {
+      throw new Error('PostgreSQL database not properly initialized. db.query is not a function.');
+    }
+    
     // Return a wrapper that makes PostgreSQL Pool look like SQLite Database
     return {
       run: function(sql, params, callback) {
-        const normalizedSql = convertSql(sql);
-        
-        // Skip no-op queries (like PRAGMA conversions)
-        if (normalizedSql === 'SELECT 1' && sql.includes('PRAGMA')) {
-          if (callback) {
-            callback(null);
+        try {
+          const normalizedSql = convertSql(sql);
+          
+          // Skip no-op queries (like PRAGMA conversions)
+          if (normalizedSql === 'SELECT 1' && sql.includes('PRAGMA')) {
+            if (callback) {
+              callback(null);
+            }
+            return;
           }
-          return;
+          
+          const queryPromise = db.query(normalizedSql, params || []);
+          if (!queryPromise || typeof queryPromise.then !== 'function') {
+            throw new Error('db.query did not return a Promise');
+          }
+          
+          queryPromise
+            .then(result => {
+              if (callback) {
+                // SQLite's run callback gets (err) and `this` context with changes and lastID
+                const context = {
+                  changes: result.rowCount || 0,
+                  lastID: result.rows[0]?.id || null
+                };
+                callback.call(context, null);
+              }
+            })
+            .catch(err => {
+              if (callback) {
+                callback(err);
+              } else {
+                console.error('Database query error (no callback):', err);
+              }
+            });
+        } catch (err) {
+          if (callback) {
+            callback(err);
+          } else {
+            console.error('Database query setup error:', err);
+          }
         }
-        
-        db.query(normalizedSql, params)
-          .then(result => {
-            if (callback) {
-              // SQLite's run callback gets (err) and `this` context with changes and lastID
-              // We need to bind a context with these properties
-              const context = {
-                changes: result.rowCount || 0,
-                lastID: result.rows[0]?.id || null
-              };
-              callback.call(context, null);
-            }
-          })
-          .catch(err => {
-            if (callback) {
-              callback(err);
-            }
-          });
       },
       get: (sql, params, callback) => {
-        const normalizedSql = convertSql(sql);
-        
-        db.query(normalizedSql, params)
-          .then(result => {
-            if (callback) {
-              callback(null, result.rows[0] || null);
-            }
-          })
-          .catch(err => {
-            if (callback) {
-              callback(err);
-            }
-          });
+        try {
+          const normalizedSql = convertSql(sql);
+          const queryPromise = db.query(normalizedSql, params || []);
+          
+          if (!queryPromise || typeof queryPromise.then !== 'function') {
+            throw new Error('db.query did not return a Promise');
+          }
+          
+          queryPromise
+            .then(result => {
+              if (callback) {
+                callback(null, result.rows[0] || null);
+              }
+            })
+            .catch(err => {
+              if (callback) {
+                callback(err);
+              } else {
+                console.error('Database query error (no callback):', err);
+              }
+            });
+        } catch (err) {
+          if (callback) {
+            callback(err);
+          } else {
+            console.error('Database query setup error:', err);
+          }
+        }
       },
       all: (sql, params, callback) => {
-        const normalizedSql = convertSql(sql);
-        
-        db.query(normalizedSql, params)
-          .then(result => {
-            if (callback) {
-              callback(null, result.rows);
-            }
-          })
-          .catch(err => {
-            if (callback) {
-              callback(err);
-            }
-          });
+        try {
+          const normalizedSql = convertSql(sql);
+          const queryPromise = db.query(normalizedSql, params || []);
+          
+          if (!queryPromise || typeof queryPromise.then !== 'function') {
+            throw new Error('db.query did not return a Promise');
+          }
+          
+          queryPromise
+            .then(result => {
+              if (callback) {
+                callback(null, result.rows || []);
+              }
+            })
+            .catch(err => {
+              if (callback) {
+                callback(err);
+              } else {
+                console.error('Database query error (no callback):', err);
+              }
+            });
+        } catch (err) {
+          if (callback) {
+            callback(err);
+          } else {
+            console.error('Database query setup error:', err);
+          }
+        }
       },
       serialize: (callback) => {
         // PostgreSQL doesn't need serialize, just run the callback
         if (callback) callback();
       },
       close: (callback) => {
-        db.end().then(() => {
+        if (db && typeof db.end === 'function') {
+          db.end().then(() => {
+            if (callback) callback(null);
+          }).catch(err => {
+            if (callback) callback(err);
+          });
+        } else {
           if (callback) callback(null);
-        }).catch(err => {
-          if (callback) callback(err);
-        });
+        }
       }
     };
   }
