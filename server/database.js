@@ -389,7 +389,19 @@ const getDb = () => {
     
     // Return a wrapper that makes PostgreSQL Pool look like SQLite Database
     return {
-      run: function(sql, params, callback) {
+      run: function(sql, paramsOrCallback, callbackOrUndefined) {
+        // Handle SQLite-style call: run(sql, callback) - params are optional
+        let params, callback;
+        if (typeof paramsOrCallback === 'function') {
+          // Called as run(sql, callback) - no params
+          params = [];
+          callback = paramsOrCallback;
+        } else {
+          // Called as run(sql, params, callback)
+          params = paramsOrCallback || [];
+          callback = callbackOrUndefined;
+        }
+        
         try {
           const normalizedSql = convertSql(sql);
           
@@ -401,7 +413,12 @@ const getDb = () => {
             return;
           }
           
-          const queryPromise = db.query(normalizedSql, params || []);
+          // Ensure params is an array
+          if (!Array.isArray(params)) {
+            params = [];
+          }
+          
+          const queryPromise = db.query(normalizedSql, params);
           if (!queryPromise || typeof queryPromise.then !== 'function') {
             throw new Error('db.query did not return a Promise');
           }
@@ -429,6 +446,7 @@ const getDb = () => {
             callback(err);
           } else {
             console.error('Database query setup error:', err);
+            throw err;
           }
         }
       },
