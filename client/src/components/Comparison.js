@@ -65,16 +65,9 @@ const Comparison = ({ userSessionId }) => {
     }
   }, []);
 
-  useEffect(() => {
-    fetchComparison();
+  const checkComparisonCount = useCallback(async () => {
+    if (!userSessionId) return;
     
-    // Check comparison count for anonymous users
-    if (!isAuthenticated && userSessionId) {
-      checkComparisonCount();
-    }
-  }, [fetchComparison, isAuthenticated, userSessionId]);
-
-  const checkComparisonCount = async () => {
     try {
       const response = await axios.get(`/api/comparison/count?sessionId=${userSessionId}`);
       setComparisonCount(response.data.count || 0);
@@ -87,35 +80,18 @@ const Comparison = ({ userSessionId }) => {
     } catch (error) {
       console.error('Error checking comparison count:', error);
     }
-  };
+  }, [userSessionId, isAuthenticated]);
 
-  // Keyboard shortcuts
   useEffect(() => {
-    const handleKeyPress = (e) => {
-      if (voting || loading || !items) return;
-      
-      // Prevent keyboard shortcuts when typing in inputs
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-        return;
-      }
+    fetchComparison();
+    
+    // Check comparison count for anonymous users
+    if (!isAuthenticated && userSessionId) {
+      checkComparisonCount();
+    }
+  }, [fetchComparison, isAuthenticated, userSessionId, checkComparisonCount]);
 
-      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-        e.preventDefault();
-        handleVote(items.item1.id);
-      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-        e.preventDefault();
-        handleVote(items.item2.id);
-      } else if (e.key === ' ' || e.key === 's' || e.key === 'S') {
-        e.preventDefault();
-        handleSkip();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [items, voting, loading]);
-
-  const handleVote = async (winnerId) => {
+  const handleVote = useCallback(async (winnerId) => {
     if (voting || !items || loading) return;
     
     setSelected(winnerId);
@@ -165,7 +141,40 @@ const Comparison = ({ userSessionId }) => {
     } finally {
       setVoting(false);
     }
-  };
+  }, [voting, items, loading, token, userSessionId, isAuthenticated, fetchComparison, checkComparisonCount]);
+
+  const handleSkip = useCallback(async () => {
+    if (voting || loading) return;
+    
+    showToast('Skipped! Loading next comparison...', 'info');
+    fetchComparison();
+  }, [voting, loading, fetchComparison]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyPress = (e) => {
+      if (voting || loading || !items) return;
+      
+      // Prevent keyboard shortcuts when typing in inputs
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+        return;
+      }
+
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        e.preventDefault();
+        handleVote(items.item1.id);
+      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        e.preventDefault();
+        handleVote(items.item2.id);
+      } else if (e.key === ' ' || e.key === 's' || e.key === 'S') {
+        e.preventDefault();
+        handleSkip();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [items, voting, loading, handleVote, handleSkip]);
 
   const handleAccountPromptClose = () => {
     setShowAccountPrompt(false);
@@ -175,13 +184,6 @@ const Comparison = ({ userSessionId }) => {
     setShowAccountPrompt(false);
     localStorage.removeItem('accountPromptShown');
     showToast('Account created! Your votes are now tracked.', 'success');
-  };
-
-  const handleSkip = async () => {
-    if (voting || loading) return;
-    
-    showToast('Skipped! Loading next comparison...', 'info');
-    fetchComparison();
   };
 
   if (loading && !items) {

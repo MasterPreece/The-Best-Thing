@@ -6,4 +6,8 @@ node_modules/
 client/build/
 client/node_modules/
 *.log
+PUSH_COMMANDS.sh
+*.sh
+github_pat_*
+ghp_*
 

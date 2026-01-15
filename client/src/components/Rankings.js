@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import './Rankings.css';
 
@@ -6,14 +6,9 @@ const Rankings = () => {
   const [rankings, setRankings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [limit, setLimit] = useState(100);
-
-  useEffect(() => {
-    fetchRankings();
-  }, [limit]);
-
   const [error, setError] = useState(null);
 
-  const fetchRankings = async () => {
+  const fetchRankings = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -28,7 +23,11 @@ const Rankings = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [limit]);
+
+  useEffect(() => {
+    fetchRankings();
+  }, [fetchRankings]);
 
   if (loading) {
     return (
