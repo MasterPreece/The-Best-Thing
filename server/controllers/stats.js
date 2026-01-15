@@ -24,13 +24,26 @@ const getGlobalStats = (req, res) => {
       });
     }),
     new Promise((resolve) => {
-      dbInstance.get(`
-        SELECT COUNT(*) as count 
-        FROM comparisons 
-        WHERE date(created_at) = date('now')
-      `, (err, row) => {
-        resolve(err ? 0 : (row ? row.count : 0));
-      });
+      const dbType = db.getDbType();
+      if (dbType === 'postgres') {
+        // PostgreSQL: Use CURRENT_DATE instead of date('now')
+        dbInstance.get(`
+          SELECT COUNT(*) as count 
+          FROM comparisons 
+          WHERE DATE(created_at) = CURRENT_DATE
+        `, (err, row) => {
+          resolve(err ? 0 : (row ? row.count : 0));
+        });
+      } else {
+        // SQLite: Use date('now')
+        dbInstance.get(`
+          SELECT COUNT(*) as count 
+          FROM comparisons 
+          WHERE date(created_at) = date('now')
+        `, (err, row) => {
+          resolve(err ? 0 : (row ? row.count : 0));
+        });
+      }
     })
   ]).then(([totalItems, totalComparisons, totalUsers, todayComparisons]) => {
     res.json({

@@ -325,31 +325,44 @@ const convertInsertOrIgnore = (sql) => {
 const convertSql = (sql) => {
   if (!USE_POSTGRES) return sql;
   
-  // Handle PRAGMA statements (PostgreSQL doesn't use PRAGMA)
-  if (sql.trim().toUpperCase().startsWith('PRAGMA')) {
-    // PRAGMA foreign_keys = ON is always on in PostgreSQL, so return a no-op query
-    if (sql.includes('foreign_keys')) {
-      return 'SELECT 1'; // No-op query
+  // Ensure sql is a string
+  if (!sql || typeof sql !== 'string') {
+    throw new Error(`convertSql received invalid input: ${typeof sql}`);
+  }
+  
+  try {
+    // Handle PRAGMA statements (PostgreSQL doesn't use PRAGMA)
+    if (sql.trim().toUpperCase().startsWith('PRAGMA')) {
+      // PRAGMA foreign_keys = ON is always on in PostgreSQL, so return a no-op query
+      if (sql.includes('foreign_keys')) {
+        return 'SELECT 1'; // No-op query
+      }
+      // For PRAGMA table_info, we'll handle it separately in the migration code
+      return sql;
     }
-    // For PRAGMA table_info, we'll handle it separately in the migration code
-    return sql;
+    
+    // Convert INSERT OR IGNORE
+    if (sql.includes('INSERT OR IGNORE')) {
+      return convertInsertOrIgnore(sql);
+    }
+    
+    // Convert SQLite date functions to PostgreSQL
+    let converted = sql;
+    
+    // Convert date('now') to CURRENT_DATE or NOW()
+    converted = converted.replace(/date\s*\(\s*['"]now['"]\s*\)/gi, 'CURRENT_DATE');
+    
+    // RANDOM() works in both, but ensure consistency
+    converted = converted.replace(/\bRANDOM\(\)/gi, 'RANDOM()');
+    
+    // Convert placeholders
+    converted = convertPlaceholders(converted);
+    
+    return converted;
+  } catch (err) {
+    console.error('Error in convertSql:', err, 'SQL:', sql.substring(0, 100));
+    throw err;
   }
-  
-  // Convert INSERT OR IGNORE
-  if (sql.includes('INSERT OR IGNORE')) {
-    return convertInsertOrIgnore(sql);
-  }
-  
-  // Convert SQLite functions to PostgreSQL equivalents
-  let converted = sql;
-  
-  // RANDOM() works in both, but ensure consistency
-  converted = converted.replace(/\bRANDOM\(\)/gi, 'RANDOM()');
-  
-  // Convert placeholders
-  converted = convertPlaceholders(converted);
-  
-  return converted;
 };
 
 // Database wrapper to provide a unified interface
@@ -412,11 +425,37 @@ const getDb = () => {
       },
       get: (sql, params, callback) => {
         try {
+          if (!db || typeof db.query !== 'function') {
+            const err = new Error('PostgreSQL database not initialized properly');
+            if (callback) return callback(err);
+            throw err;
+          }
+          
           const normalizedSql = convertSql(sql);
-          const queryPromise = db.query(normalizedSql, params || []);
+          
+          // Ensure we have valid SQL and params
+          if (!normalizedSql || typeof normalizedSql !== 'string') {
+            const err = new Error('Invalid SQL after conversion');
+            if (callback) return callback(err);
+            throw err;
+          }
+          
+          const queryParams = params || [];
+          let queryPromise;
+          
+          try {
+            queryPromise = db.query(normalizedSql, queryParams);
+          } catch (queryErr) {
+            // db.query() threw synchronously (shouldn't happen, but catch it)
+            if (callback) return callback(queryErr);
+            throw queryErr;
+          }
           
           if (!queryPromise || typeof queryPromise.then !== 'function') {
-            throw new Error('db.query did not return a Promise');
+            const err = new Error(`db.query did not return a Promise. Got: ${typeof queryPromise}`);
+            console.error('Query debug:', { sql: normalizedSql.substring(0, 50), params: queryParams, dbType: typeof db });
+            if (callback) return callback(err);
+            throw err;
           }
           
           queryPromise
@@ -437,16 +476,43 @@ const getDb = () => {
             callback(err);
           } else {
             console.error('Database query setup error:', err);
+            throw err;
           }
         }
       },
       all: (sql, params, callback) => {
         try {
+          if (!db || typeof db.query !== 'function') {
+            const err = new Error('PostgreSQL database not initialized properly');
+            if (callback) return callback(err);
+            throw err;
+          }
+          
           const normalizedSql = convertSql(sql);
-          const queryPromise = db.query(normalizedSql, params || []);
+          
+          // Ensure we have valid SQL and params
+          if (!normalizedSql || typeof normalizedSql !== 'string') {
+            const err = new Error('Invalid SQL after conversion');
+            if (callback) return callback(err);
+            throw err;
+          }
+          
+          const queryParams = params || [];
+          let queryPromise;
+          
+          try {
+            queryPromise = db.query(normalizedSql, queryParams);
+          } catch (queryErr) {
+            // db.query() threw synchronously (shouldn't happen, but catch it)
+            if (callback) return callback(queryErr);
+            throw queryErr;
+          }
           
           if (!queryPromise || typeof queryPromise.then !== 'function') {
-            throw new Error('db.query did not return a Promise');
+            const err = new Error(`db.query did not return a Promise. Got: ${typeof queryPromise}`);
+            console.error('Query debug:', { sql: normalizedSql.substring(0, 50), params: queryParams, dbType: typeof db });
+            if (callback) return callback(err);
+            throw err;
           }
           
           queryPromise
@@ -467,6 +533,7 @@ const getDb = () => {
             callback(err);
           } else {
             console.error('Database query setup error:', err);
+            throw err;
           }
         }
       },
