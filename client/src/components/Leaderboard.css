@@ -17,6 +17,28 @@
 .leaderboard-header p {
   font-size: 1.2rem;
   opacity: 0.9;
+  margin-bottom: 1rem;
+}
+
+.limit-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.5rem 1rem;
+  border-radius: 10px;
+  backdrop-filter: blur(10px);
+  margin-top: 1rem;
+}
+
+.limit-select {
+  padding: 0.5rem;
+  border: none;
+  border-radius: 5px;
+  font-size: 1rem;
+  background: white;
+  color: #333;
+  cursor: pointer;
 }
 
 .leaderboard-list {

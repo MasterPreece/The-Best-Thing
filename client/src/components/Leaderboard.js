@@ -5,19 +5,20 @@ import './Leaderboard.css';
 const Leaderboard = () => {
   const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [limit, setLimit] = useState(100);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     fetchLeaderboard();
     // Refresh leaderboard every 30 seconds
     const interval = setInterval(fetchLeaderboard, 30000);
     return () => clearInterval(interval);
-  }, []);
-
-  const [error, setError] = useState(null);
+  }, [limit]);
 
   const fetchLeaderboard = async () => {
+    setLoading(true);
     try {
-      const response = await axios.get('/api/leaderboard');
+      const response = await axios.get(`/api/leaderboard?limit=${limit}`);
       setLeaderboard(response.data.leaderboard || []);
       setError(null);
     } catch (error) {
@@ -68,6 +69,21 @@ const Leaderboard = () => {
       <div className="leaderboard-header">
         <h1>🏅 Leaderboard</h1>
         <p>Top contributors who have made the most comparisons</p>
+        <div className="limit-controls">
+          <label>Show top:</label>
+          <select
+            value={limit}
+            onChange={(e) => setLimit(Number(e.target.value))}
+            className="limit-select"
+          >
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+            <option value={200}>200</option>
+            <option value={500}>500</option>
+            <option value={1000}>1,000</option>
+            <option value={10000}>All</option>
+          </select>
+        </div>
       </div>
 
       {error && (
