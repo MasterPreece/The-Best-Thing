@@ -5,6 +5,7 @@ const db = require('./database');
 const apiRoutes = require('./routes');
 const scheduler = require('./utils/scheduler');
 const { runMigrations } = require('./utils/db-migration');
+const { autoSeedIfEmpty } = require('./utils/auto-seed');
 
 const app = express();
 // Railway sets PORT automatically, fallback to 3001 for local dev
@@ -46,6 +47,12 @@ db.init().then(() => {
   // Run migrations
   return runMigrations();
 }).then(() => {
+  // Auto-seed if database is empty (runs in background, doesn't block server start)
+  autoSeedIfEmpty().catch(err => {
+    console.error('Auto-seed error (non-fatal):', err);
+  });
+  
+  // Start server immediately (seeding happens in background)
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     
