@@ -432,7 +432,19 @@ const getDb = () => {
           }
         }
       },
-      get: (sql, params, callback) => {
+      get: (sql, paramsOrCallback, callbackOrUndefined) => {
+        // Handle SQLite-style call: get(sql, callback) - params are optional
+        let params, callback;
+        if (typeof paramsOrCallback === 'function') {
+          // Called as get(sql, callback) - no params
+          params = [];
+          callback = paramsOrCallback;
+        } else {
+          // Called as get(sql, params, callback)
+          params = paramsOrCallback || [];
+          callback = callbackOrUndefined;
+        }
+        
         try {
           if (!db || typeof db.query !== 'function') {
             const err = new Error('PostgreSQL database not initialized properly');
@@ -442,18 +454,22 @@ const getDb = () => {
           
           const normalizedSql = convertSql(sql);
           
-          // Ensure we have valid SQL and params
+          // Ensure we have valid SQL
           if (!normalizedSql || typeof normalizedSql !== 'string') {
             const err = new Error('Invalid SQL after conversion');
             if (callback) return callback(err);
             throw err;
           }
           
-          const queryParams = params || [];
+          // Ensure params is an array
+          if (!Array.isArray(params)) {
+            params = [];
+          }
+          
           let queryPromise;
           
           try {
-            queryPromise = db.query(normalizedSql, queryParams);
+            queryPromise = db.query(normalizedSql, params);
           } catch (queryErr) {
             // db.query() threw synchronously (shouldn't happen, but catch it)
             if (callback) return callback(queryErr);
@@ -462,7 +478,6 @@ const getDb = () => {
           
           if (!queryPromise || typeof queryPromise.then !== 'function') {
             const err = new Error(`db.query did not return a Promise. Got: ${typeof queryPromise}`);
-            console.error('Query debug:', { sql: normalizedSql.substring(0, 50), params: queryParams, dbType: typeof db });
             if (callback) return callback(err);
             throw err;
           }
@@ -489,7 +504,19 @@ const getDb = () => {
           }
         }
       },
-      all: (sql, params, callback) => {
+      all: (sql, paramsOrCallback, callbackOrUndefined) => {
+        // Handle SQLite-style call: all(sql, callback) - params are optional
+        let params, callback;
+        if (typeof paramsOrCallback === 'function') {
+          // Called as all(sql, callback) - no params
+          params = [];
+          callback = paramsOrCallback;
+        } else {
+          // Called as all(sql, params, callback)
+          params = paramsOrCallback || [];
+          callback = callbackOrUndefined;
+        }
+        
         try {
           if (!db || typeof db.query !== 'function') {
             const err = new Error('PostgreSQL database not initialized properly');
@@ -499,18 +526,22 @@ const getDb = () => {
           
           const normalizedSql = convertSql(sql);
           
-          // Ensure we have valid SQL and params
+          // Ensure we have valid SQL
           if (!normalizedSql || typeof normalizedSql !== 'string') {
             const err = new Error('Invalid SQL after conversion');
             if (callback) return callback(err);
             throw err;
           }
           
-          const queryParams = params || [];
+          // Ensure params is an array
+          if (!Array.isArray(params)) {
+            params = [];
+          }
+          
           let queryPromise;
           
           try {
-            queryPromise = db.query(normalizedSql, queryParams);
+            queryPromise = db.query(normalizedSql, params);
           } catch (queryErr) {
             // db.query() threw synchronously (shouldn't happen, but catch it)
             if (callback) return callback(queryErr);
@@ -519,7 +550,6 @@ const getDb = () => {
           
           if (!queryPromise || typeof queryPromise.then !== 'function') {
             const err = new Error(`db.query did not return a Promise. Got: ${typeof queryPromise}`);
-            console.error('Query debug:', { sql: normalizedSql.substring(0, 50), params: queryParams, dbType: typeof db });
             if (callback) return callback(err);
             throw err;
           }
