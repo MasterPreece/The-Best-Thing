@@ -172,28 +172,23 @@ const createTables = async () => {
     // SQLite table creation - use parallel execution with proper error handling
     return new Promise((resolve, reject) => {
       let completed = 0;
-      let hasError = false;
+      let hasError = null;
       const totalOperations = 13; // 4 tables + 1 index + 7 indexes + 1 PRAGMA
       
-      const checkComplete = () => {
-        completed++;
-        if (completed === totalOperations) {
-          if (!hasError) {
-            console.log('SQLite tables created successfully');
-            resolve();
-          } else {
-            reject(new Error('Some table creation operations failed'));
-          }
-        }
-      };
-      
-      const handleError = (err, operation) => {
+      const onComplete = (err, operation) => {
         if (err && !hasError) {
           console.error(`Error in ${operation}:`, err);
-          hasError = true;
-          reject(err);
+          hasError = err;
         }
-        checkComplete();
+        completed++;
+        if (completed === totalOperations) {
+          if (hasError) {
+            reject(hasError);
+          } else {
+            console.log('SQLite tables created successfully');
+            resolve();
+          }
+        }
       };
       
       // Items table
@@ -208,9 +203,9 @@ const createTables = async () => {
         wins INTEGER DEFAULT 0,
         losses INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )`, (err) => handleError(err, 'create items table'));
+      )`, (err) => onComplete(err, 'create items table'));
       
-      db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_items_title ON items(title)`, (err) => handleError(err, 'create idx_items_title'));
+      db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_items_title ON items(title)`, (err) => onComplete(err, 'create idx_items_title'));
       
       // Comparisons table
       db.run(`CREATE TABLE IF NOT EXISTS comparisons (
@@ -224,7 +219,7 @@ const createTables = async () => {
         FOREIGN KEY (item1_id) REFERENCES items(id),
         FOREIGN KEY (item2_id) REFERENCES items(id),
         FOREIGN KEY (winner_id) REFERENCES items(id)
-      )`, (err) => handleError(err, 'create comparisons table'));
+      )`, (err) => onComplete(err, 'create comparisons table'));
       
       // User sessions table
       db.run(`CREATE TABLE IF NOT EXISTS user_sessions (
@@ -232,7 +227,7 @@ const createTables = async () => {
         comparisons_count INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         last_active DATETIME DEFAULT CURRENT_TIMESTAMP
-      )`, (err) => handleError(err, 'create user_sessions table'));
+      )`, (err) => onComplete(err, 'create user_sessions table'));
       
       // Users table
       db.run(`CREATE TABLE IF NOT EXISTS users (
@@ -243,28 +238,20 @@ const createTables = async () => {
         comparisons_count INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         last_active DATETIME DEFAULT CURRENT_TIMESTAMP
-      )`, (err) => handleError(err, 'create users table'));
+      )`, (err) => onComplete(err, 'create users table'));
       
       // Indexes
-      db.run(`CREATE INDEX IF NOT EXISTS idx_items_elo ON items(elo_rating DESC)`, (err) => handleError(err, 'create idx_items_elo'));
-      db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_winner ON comparisons(winner_id)`, (err) => handleError(err, 'create idx_comparisons_winner'));
-      db.run(`CREATE INDEX IF NOT EXISTS idx_user_sessions_comparisons ON user_sessions(comparisons_count DESC)`, (err) => handleError(err, 'create idx_user_sessions_comparisons'));
-      db.run(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`, (err) => handleError(err, 'create idx_users_email'));
-      db.run(`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`, (err) => handleError(err, 'create idx_users_username'));
-      db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_user_session_id ON comparisons(user_session_id)`, (err) => handleError(err, 'create idx_comparisons_user_session_id'));
-      db.run(`CREATE INDEX IF NOT EXISTS idx_users_comparisons ON users(comparisons_count DESC)`, (err) => handleError(err, 'create idx_users_comparisons'));
-      db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_user_id ON comparisons(user_id)`, (err) => handleError(err, 'create idx_comparisons_user_id'));
+      db.run(`CREATE INDEX IF NOT EXISTS idx_items_elo ON items(elo_rating DESC)`, (err) => onComplete(err, 'create idx_items_elo'));
+      db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_winner ON comparisons(winner_id)`, (err) => onComplete(err, 'create idx_comparisons_winner'));
+      db.run(`CREATE INDEX IF NOT EXISTS idx_user_sessions_comparisons ON user_sessions(comparisons_count DESC)`, (err) => onComplete(err, 'create idx_user_sessions_comparisons'));
+      db.run(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`, (err) => onComplete(err, 'create idx_users_email'));
+      db.run(`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`, (err) => onComplete(err, 'create idx_users_username'));
+      db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_user_session_id ON comparisons(user_session_id)`, (err) => onComplete(err, 'create idx_comparisons_user_session_id'));
+      db.run(`CREATE INDEX IF NOT EXISTS idx_users_comparisons ON users(comparisons_count DESC)`, (err) => onComplete(err, 'create idx_users_comparisons'));
+      db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_user_id ON comparisons(user_id)`, (err) => onComplete(err, 'create idx_comparisons_user_id'));
       
       // Enable foreign keys for SQLite
-      db.run(`PRAGMA foreign_keys = ON`, (err) => {
-        if (err) {
-          console.error('Error enabling foreign keys:', err);
-          hasError = true;
-          reject(err);
-        } else {
-          checkComplete();
-        }
-      });
+      db.run(`PRAGMA foreign_keys = ON`, (err) => onComplete(err, 'enable foreign keys'));
     });
   }
 };
