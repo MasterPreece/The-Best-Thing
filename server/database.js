@@ -58,10 +58,15 @@ const init = async () => {
       console.error('PostgreSQL connection error:', err);
       throw err;
     }
+    
+    // Create tables for PostgreSQL
+    await createTables();
   } else {
     // SQLite initialization
     dbType = 'sqlite';
-    return new Promise((resolve, reject) => {
+    
+    // Connect to database first
+    await new Promise((resolve, reject) => {
       db = new sqlite3.Database(DB_PATH, (err) => {
         if (err) {
           reject(err);
@@ -71,10 +76,10 @@ const init = async () => {
         resolve();
       });
     });
+    
+    // Create tables for SQLite (must wait for this to complete)
+    await createTables();
   }
-  
-  // Create tables
-  await createTables();
 };
 
 const createTables = async () => {
