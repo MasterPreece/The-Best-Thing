@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import './Leaderboard.css';
 
@@ -8,14 +8,7 @@ const Leaderboard = () => {
   const [limit, setLimit] = useState(100);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    fetchLeaderboard();
-    // Refresh leaderboard every 30 seconds
-    const interval = setInterval(fetchLeaderboard, 30000);
-    return () => clearInterval(interval);
-  }, [limit]);
-
-  const fetchLeaderboard = async () => {
+  const fetchLeaderboard = useCallback(async () => {
     setLoading(true);
     try {
       const response = await axios.get(`/api/leaderboard?limit=${limit}`);
@@ -30,7 +23,14 @@ const Leaderboard = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [limit]);
+
+  useEffect(() => {
+    fetchLeaderboard();
+    // Refresh leaderboard every 30 seconds
+    const interval = setInterval(fetchLeaderboard, 30000);
+    return () => clearInterval(interval);
+  }, [fetchLeaderboard]);
 
   const getMedal = (rank) => {
     if (rank === 1) return '🥇';
