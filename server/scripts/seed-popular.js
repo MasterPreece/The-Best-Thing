@@ -32,23 +32,38 @@ async function seedPopular() {
   console.log(`Fetching ${POPULAR_COUNT} popular articles...\n`);
   
   // Fetch popular articles in batches
-  const batches = Math.ceil(POPULAR_COUNT / 10);
+  // Fetch more than needed to account for duplicates/invalid items
+  const targetCount = POPULAR_COUNT;
+  const fetchMultiplier = 3; // Fetch 3x to account for duplicates/skips
+  const batches = Math.ceil((targetCount * fetchMultiplier) / 10);
   let totalAdded = 0;
   let totalSkipped = 0;
+  let attempts = 0;
+  const maxAttempts = batches * 2; // Limit total attempts
   
-  for (let i = 0; i < batches; i++) {
-    const batchSize = Math.min(10, POPULAR_COUNT - totalAdded);
-    if (batchSize <= 0) break;
+  console.log(`Fetching up to ${targetCount * fetchMultiplier} articles to get ${targetCount} unique ones...\n`);
+  
+  for (let i = 0; i < maxAttempts && totalAdded < targetCount; i++) {
+    attempts++;
+    const remaining = targetCount - totalAdded;
+    const batchSize = Math.min(10, remaining + 5); // Fetch a few extra per batch
     
-    console.log(`\nBatch ${i + 1}/${batches}: Fetching ${batchSize} popular articles...`);
+    console.log(`Batch ${attempts}: Trying to fetch ${batchSize} popular articles (${totalAdded}/${targetCount} added so far)...`);
     
     const result = await wikipediaFetcher.fetchPopularItemsOnly(batchSize);
     totalAdded += result.inserted;
     totalSkipped += result.skipped;
     
+    console.log(`   → Added ${result.inserted}, Skipped ${result.skipped}`);
+    
+    // If we've reached our target, stop
+    if (totalAdded >= targetCount) {
+      console.log(`\n✅ Reached target of ${targetCount} articles!`);
+      break;
+    }
+    
     // Wait a bit between batches to be respectful
-    if (i < batches - 1) {
-      console.log('Waiting 2 seconds before next batch...');
+    if (i < maxAttempts - 1 && totalAdded < targetCount) {
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
   }

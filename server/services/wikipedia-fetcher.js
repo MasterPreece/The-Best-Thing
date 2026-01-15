@@ -48,6 +48,7 @@ const getRandomArticles = async (count = 10) => {
 /**
  * Get popular/most viewed Wikipedia articles
  * Uses the "mostviewed" list which returns articles with the most views in a time period
+ * Tries multiple sources to get variety
  */
 const getPopularArticles = async (count = 10) => {
   try {
@@ -57,7 +58,7 @@ const getPopularArticles = async (count = 10) => {
         action: 'query',
         format: 'json',
         list: 'mostviewed',
-        pvimlimit: count,
+        pvimlimit: Math.min(count * 2, 100), // Get more to account for duplicates
         pvimnamespace: 0, // Only main articles
         redirects: 1
       },
@@ -66,11 +67,24 @@ const getPopularArticles = async (count = 10) => {
       }
     });
 
-    const articles = response.data.query?.mostviewed || [];
-    return articles.map(article => article.title);
+    let articles = response.data.query?.mostviewed || [];
+    
+    // If we don't have enough, supplement with featured articles
+    if (articles.length < count) {
+      console.log(`Only got ${articles.length} from mostviewed, supplementing with featured articles...`);
+      const featured = await getFeaturedArticles(count - articles.length);
+      articles = [...articles.map(a => a.title), ...featured];
+    } else {
+      // Shuffle to get variety and take requested count
+      articles = articles.sort(() => Math.random() - 0.5).slice(0, count);
+      articles = articles.map(article => article.title);
+    }
+    
+    return articles;
   } catch (error) {
     console.error('Error fetching popular articles:', error.message);
     // Fallback to getting featured articles if mostviewed fails
+    console.log('Falling back to featured articles...');
     return await getFeaturedArticles(count);
   }
 };
@@ -81,27 +95,53 @@ const getPopularArticles = async (count = 10) => {
  */
 const getFeaturedArticles = async (count = 10) => {
   try {
-    // Get articles from the "Featured articles" category
-    const response = await axios.get(WIKIPEDIA_API, {
-      params: {
-        action: 'query',
-        format: 'json',
-        list: 'categorymembers',
-        cmtitle: 'Category:Featured articles',
-        cmnamespace: 0,
-        cmlimit: count * 2, // Get more to account for potential skips
-        cmtype: 'page',
-        redirects: 1
-      },
-      headers: {
-        'User-Agent': 'TheBestThing/1.0 (https://github.com/MasterPreece/The-Best-Thing; contact@example.com)'
-      }
-    });
+    // Get articles from multiple popular categories for variety
+    const categories = [
+      'Category:Featured articles',
+      'Category:Good articles',
+      'Category:Biography',
+      'Category:Countries',
+      'Category:Cities'
+    ];
+    
+    let allArticles = [];
+    
+    // Try to get from multiple categories
+    for (const category of categories.slice(0, 3)) { // Try first 3 categories
+      try {
+        const response = await axios.get(WIKIPEDIA_API, {
+          params: {
+            action: 'query',
+            format: 'json',
+            list: 'categorymembers',
+            cmtitle: category,
+            cmnamespace: 0,
+            cmlimit: Math.ceil(count / 2), // Get fewer from each category
+            cmtype: 'page',
+            redirects: 1
+          },
+          headers: {
+            'User-Agent': 'TheBestThing/1.0 (https://github.com/MasterPreece/The-Best-Thing; contact@example.com)'
+          }
+        });
 
-    const members = response.data.query?.categorymembers || [];
-    // Shuffle and take count
-    const shuffled = members.sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, count).map(member => member.title);
+        const members = response.data.query?.categorymembers || [];
+        allArticles = [...allArticles, ...members.map(m => m.title)];
+        
+        // Wait between category requests
+        await new Promise(resolve => setTimeout(resolve, 300));
+      } catch (err) {
+        console.error(`Error fetching from ${category}:`, err.message);
+      }
+      
+      // If we have enough, stop
+      if (allArticles.length >= count) break;
+    }
+    
+    // Shuffle and take count, remove duplicates
+    const unique = [...new Set(allArticles)];
+    const shuffled = unique.sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, count);
   } catch (error) {
     console.error('Error fetching featured articles:', error.message);
     return [];
