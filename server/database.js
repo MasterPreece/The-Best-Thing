@@ -169,89 +169,112 @@ const createTables = async () => {
       client.release();
     }
   } else {
-    // SQLite table creation - use parallel execution with proper error handling
+    // SQLite table creation - use serialize() for sequential execution
     return new Promise((resolve, reject) => {
-      let completed = 0;
-      let hasError = null;
-      const totalOperations = 13; // 4 tables + 1 index + 7 indexes + 1 PRAGMA
-      
-      const onComplete = (err, operation) => {
-        if (err && !hasError) {
-          console.error(`Error in ${operation}:`, err);
-          hasError = err;
-        }
-        completed++;
-        if (completed === totalOperations) {
-          if (hasError) {
-            reject(hasError);
-          } else {
-            console.log('SQLite tables created successfully');
-            resolve();
+      db.serialize(() => {
+        // Items table - must be first
+        db.run(`CREATE TABLE IF NOT EXISTS items (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          wikipedia_id INTEGER UNIQUE,
+          title TEXT NOT NULL UNIQUE,
+          image_url TEXT,
+          description TEXT,
+          elo_rating REAL DEFAULT 1500,
+          comparison_count INTEGER DEFAULT 0,
+          wins INTEGER DEFAULT 0,
+          losses INTEGER DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`, (err) => {
+          if (err) {
+            console.error('Error creating items table:', err);
+            return reject(err);
           }
-        }
-      };
-      
-      // Items table
-      db.run(`CREATE TABLE IF NOT EXISTS items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        wikipedia_id INTEGER UNIQUE,
-        title TEXT NOT NULL UNIQUE,
-        image_url TEXT,
-        description TEXT,
-        elo_rating REAL DEFAULT 1500,
-        comparison_count INTEGER DEFAULT 0,
-        wins INTEGER DEFAULT 0,
-        losses INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )`, (err) => onComplete(err, 'create items table'));
-      
-      db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_items_title ON items(title)`, (err) => onComplete(err, 'create idx_items_title'));
-      
-      // Comparisons table
-      db.run(`CREATE TABLE IF NOT EXISTS comparisons (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        item1_id INTEGER NOT NULL,
-        item2_id INTEGER NOT NULL,
-        winner_id INTEGER NOT NULL,
-        user_session_id TEXT,
-        user_id INTEGER REFERENCES users(id),
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (item1_id) REFERENCES items(id),
-        FOREIGN KEY (item2_id) REFERENCES items(id),
-        FOREIGN KEY (winner_id) REFERENCES items(id)
-      )`, (err) => onComplete(err, 'create comparisons table'));
-      
-      // User sessions table
-      db.run(`CREATE TABLE IF NOT EXISTS user_sessions (
-        session_id TEXT PRIMARY KEY,
-        comparisons_count INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        last_active DATETIME DEFAULT CURRENT_TIMESTAMP
-      )`, (err) => onComplete(err, 'create user_sessions table'));
-      
-      // Users table
-      db.run(`CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        email TEXT UNIQUE NOT NULL,
-        username TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        comparisons_count INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        last_active DATETIME DEFAULT CURRENT_TIMESTAMP
-      )`, (err) => onComplete(err, 'create users table'));
-      
-      // Indexes
-      db.run(`CREATE INDEX IF NOT EXISTS idx_items_elo ON items(elo_rating DESC)`, (err) => onComplete(err, 'create idx_items_elo'));
-      db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_winner ON comparisons(winner_id)`, (err) => onComplete(err, 'create idx_comparisons_winner'));
-      db.run(`CREATE INDEX IF NOT EXISTS idx_user_sessions_comparisons ON user_sessions(comparisons_count DESC)`, (err) => onComplete(err, 'create idx_user_sessions_comparisons'));
-      db.run(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`, (err) => onComplete(err, 'create idx_users_email'));
-      db.run(`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`, (err) => onComplete(err, 'create idx_users_username'));
-      db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_user_session_id ON comparisons(user_session_id)`, (err) => onComplete(err, 'create idx_comparisons_user_session_id'));
-      db.run(`CREATE INDEX IF NOT EXISTS idx_users_comparisons ON users(comparisons_count DESC)`, (err) => onComplete(err, 'create idx_users_comparisons'));
-      db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_user_id ON comparisons(user_id)`, (err) => onComplete(err, 'create idx_comparisons_user_id'));
-      
-      // Enable foreign keys for SQLite
-      db.run(`PRAGMA foreign_keys = ON`, (err) => onComplete(err, 'enable foreign keys'));
+          console.log('✓ Created items table');
+          
+          // Index for items
+          db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_items_title ON items(title)`, (err) => {
+            if (err) console.error('Error creating idx_items_title:', err);
+            
+            // Comparisons table - depends on items
+            db.run(`CREATE TABLE IF NOT EXISTS comparisons (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              item1_id INTEGER NOT NULL,
+              item2_id INTEGER NOT NULL,
+              winner_id INTEGER NOT NULL,
+              user_session_id TEXT,
+              user_id INTEGER REFERENCES users(id),
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (item1_id) REFERENCES items(id),
+              FOREIGN KEY (item2_id) REFERENCES items(id),
+              FOREIGN KEY (winner_id) REFERENCES items(id)
+            )`, (err) => {
+              if (err) {
+                console.error('Error creating comparisons table:', err);
+                return reject(err);
+              }
+              console.log('✓ Created comparisons table');
+              
+              // User sessions table
+              db.run(`CREATE TABLE IF NOT EXISTS user_sessions (
+                session_id TEXT PRIMARY KEY,
+                comparisons_count INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_active DATETIME DEFAULT CURRENT_TIMESTAMP
+              )`, (err) => {
+                if (err) {
+                  console.error('Error creating user_sessions table:', err);
+                  return reject(err);
+                }
+                console.log('✓ Created user_sessions table');
+                
+                // Users table
+                db.run(`CREATE TABLE IF NOT EXISTS users (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  email TEXT UNIQUE NOT NULL,
+                  username TEXT UNIQUE NOT NULL,
+                  password_hash TEXT NOT NULL,
+                  comparisons_count INTEGER DEFAULT 0,
+                  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                  last_active DATETIME DEFAULT CURRENT_TIMESTAMP
+                )`, (err) => {
+                  if (err) {
+                    console.error('Error creating users table:', err);
+                    return reject(err);
+                  }
+                  console.log('✓ Created users table');
+                  
+                  // Create indexes sequentially
+                  db.run(`CREATE INDEX IF NOT EXISTS idx_items_elo ON items(elo_rating DESC)`, () => {
+                    db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_winner ON comparisons(winner_id)`, () => {
+                      db.run(`CREATE INDEX IF NOT EXISTS idx_user_sessions_comparisons ON user_sessions(comparisons_count DESC)`, () => {
+                        db.run(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`, () => {
+                          db.run(`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`, () => {
+                            db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_user_session_id ON comparisons(user_session_id)`, () => {
+                              db.run(`CREATE INDEX IF NOT EXISTS idx_users_comparisons ON users(comparisons_count DESC)`, () => {
+                                db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_user_id ON comparisons(user_id)`, () => {
+                                  // Enable foreign keys for SQLite
+                                  db.run(`PRAGMA foreign_keys = ON`, (err) => {
+                                    if (err) {
+                                      console.error('Error enabling foreign keys:', err);
+                                      return reject(err);
+                                    }
+                                    console.log('SQLite tables created successfully');
+                                    resolve();
+                                  });
+                                });
+                              });
+                            });
+                          });
+                        });
+                      });
+                    });
+                  });
+                });
+              });
+            });
+          });
+        });
+      });
     });
   }
 };
