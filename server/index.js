@@ -47,20 +47,26 @@ db.init().then(() => {
   // Run migrations
   return runMigrations();
 }).then(() => {
+  console.log('Database initialized successfully');
+  
   // Auto-seed if database is empty (runs in background, doesn't block server start)
-  autoSeedIfEmpty().catch(err => {
+  autoSeedIfEmpty().then(() => {
+    console.log('Auto-seed check completed');
+  }).catch(err => {
     console.error('Auto-seed error (non-fatal):', err);
   });
   
   // Start server immediately (seeding happens in background)
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    console.log(`API endpoints available at http://localhost:${PORT}/api`);
     
     // Start the scheduler to grow the database over time
     scheduler.startScheduler();
   });
 }).catch(err => {
   console.error('Failed to initialize database:', err);
+  console.error('Error details:', err.message);
   process.exit(1);
 });
 

@@ -297,8 +297,16 @@ const convertSql = (sql) => {
     return convertInsertOrIgnore(sql);
   }
   
+  // Convert SQLite functions to PostgreSQL equivalents
+  let converted = sql;
+  
+  // RANDOM() works in both, but ensure consistency
+  converted = converted.replace(/\bRANDOM\(\)/gi, 'RANDOM()');
+  
   // Convert placeholders
-  return convertPlaceholders(sql);
+  converted = convertPlaceholders(converted);
+  
+  return converted;
 };
 
 // Database wrapper to provide a unified interface
