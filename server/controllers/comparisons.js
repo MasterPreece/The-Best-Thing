@@ -10,29 +10,64 @@ const getRandomComparison = (req, res) => {
     console.error('Error checking/fetching Wikipedia items:', err);
   });
   
-  // Get two random items (prefer items with descriptions)
-  dbInstance.all(`
-    SELECT id, title, image_url, description, elo_rating
-    FROM items
-    ORDER BY 
-      CASE WHEN description IS NOT NULL AND description != '' THEN 0 ELSE 1 END,
-      RANDOM()
-    LIMIT 2
-  `, (err, rows) => {
-    if (err) {
-      console.error('Error fetching comparison:', err);
-      return res.status(500).json({ error: 'Failed to fetch comparison' });
-    }
-    
-    if (rows.length < 2) {
-      return res.status(404).json({ error: 'Not enough items in database' });
-    }
-    
-    res.json({
-      item1: rows[0],
-      item2: rows[1]
+  // Helper function to fetch from all items (truly random)
+  const fetchFromAllItems = () => {
+    dbInstance.all(`
+      SELECT id, title, image_url, description, elo_rating
+      FROM items
+      ORDER BY RANDOM()
+      LIMIT 2
+    `, (err, rows) => {
+      if (err) {
+        console.error('Error fetching comparison:', err);
+        return res.status(500).json({ error: 'Failed to fetch comparison' });
+      }
+      
+      if (rows.length < 2) {
+        return res.status(404).json({ error: 'Not enough items in database' });
+      }
+      
+      res.json({
+        item1: rows[0],
+        item2: rows[1]
+      });
     });
-  });
+  };
+  
+  // Get two random items with better distribution
+  // Use a weighted random approach: 50% chance from items with descriptions, 50% from all items
+  // This ensures much better variety while still sometimes preferring items with descriptions
+  const useWeightedRandom = Math.random() < 0.5;
+  
+  if (useWeightedRandom) {
+    // Try to get items with descriptions first, but fall back to all items if needed
+    dbInstance.all(`
+      SELECT id, title, image_url, description, elo_rating
+      FROM items
+      WHERE description IS NOT NULL AND description != ''
+      ORDER BY RANDOM()
+      LIMIT 2
+    `, (err, rows) => {
+      if (err) {
+        console.error('Error fetching comparison:', err);
+        return res.status(500).json({ error: 'Failed to fetch comparison' });
+      }
+      
+      // If we got 2 items with descriptions, use them
+      if (rows.length >= 2) {
+        return res.json({
+          item1: rows[0],
+          item2: rows[1]
+        });
+      }
+      
+      // Otherwise, fall back to all items
+      fetchFromAllItems();
+    });
+  } else {
+    // Get truly random items from all items (50% of the time)
+    fetchFromAllItems();
+  }
 };
 
 /**
