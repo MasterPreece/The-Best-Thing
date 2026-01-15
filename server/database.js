@@ -1,7 +1,35 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const fs = require('fs');
 
-const DB_PATH = path.join(__dirname, 'database.sqlite');
+// Use persistent storage path on Railway, or local path for development
+// Railway volumes are mounted at /data by default, or use RAILWAY_VOLUME_MOUNT_PATH env var
+const PERSISTENT_STORAGE_PATH = process.env.RAILWAY_VOLUME_MOUNT_PATH || process.env.DATA_DIR || '/data';
+const LOCAL_DB_PATH = path.join(__dirname, 'database.sqlite');
+
+// Use persistent path in production (Railway), local path in development
+let DB_PATH;
+if (process.env.NODE_ENV === 'production' || process.env.RAILWAY_ENVIRONMENT) {
+  DB_PATH = path.join(PERSISTENT_STORAGE_PATH, 'database.sqlite');
+  
+  // Ensure persistent storage directory exists
+  try {
+    if (!fs.existsSync(PERSISTENT_STORAGE_PATH)) {
+      fs.mkdirSync(PERSISTENT_STORAGE_PATH, { recursive: true });
+      console.log(`Created persistent storage directory: ${PERSISTENT_STORAGE_PATH}`);
+    }
+  } catch (err) {
+    console.error(`ERROR: Could not create persistent storage directory: ${err.message}`);
+    console.error(`Database persistence will fail! Please configure Railway volume at ${PERSISTENT_STORAGE_PATH}`);
+    // Fall back to local path but warn user
+    DB_PATH = LOCAL_DB_PATH;
+    console.warn(`Falling back to local database path: ${LOCAL_DB_PATH} (this will NOT persist between deployments)`);
+  }
+} else {
+  DB_PATH = LOCAL_DB_PATH;
+}
+
+console.log(`Database will be stored at: ${DB_PATH}`);
 
 let db = null;
 
