@@ -374,8 +374,17 @@ const getDb = () => {
   
   if (USE_POSTGRES) {
     // Ensure db is a Pool instance
-    if (!db || typeof db.query !== 'function') {
-      throw new Error('PostgreSQL database not properly initialized. db.query is not a function.');
+    if (!db) {
+      throw new Error('PostgreSQL database not initialized (db is null/undefined)');
+    }
+    if (typeof db.query !== 'function') {
+      console.error('Database type check failed:', {
+        dbType: typeof db,
+        dbConstructor: db?.constructor?.name,
+        hasQuery: 'query' in db,
+        dbKeys: db ? Object.keys(db).slice(0, 10) : []
+      });
+      throw new Error(`PostgreSQL database not properly initialized. db.query is not a function. db type: ${typeof db}, constructor: ${db?.constructor?.name}`);
     }
     
     // Return a wrapper that makes PostgreSQL Pool look like SQLite Database
