@@ -107,16 +107,16 @@ const createTables = async () => {
         CREATE UNIQUE INDEX IF NOT EXISTS idx_items_title ON items(title)
       `);
       
-      // Comparisons table
+      // Users table - must be created before comparisons (which references it)
       await client.query(`
-        CREATE TABLE IF NOT EXISTS comparisons (
+        CREATE TABLE IF NOT EXISTS users (
           id SERIAL PRIMARY KEY,
-          item1_id INTEGER NOT NULL REFERENCES items(id),
-          item2_id INTEGER NOT NULL REFERENCES items(id),
-          winner_id INTEGER NOT NULL REFERENCES items(id),
-          user_session_id VARCHAR(255),
-          user_id INTEGER REFERENCES users(id),
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          email VARCHAR(255) UNIQUE NOT NULL,
+          username VARCHAR(100) UNIQUE NOT NULL,
+          password_hash TEXT NOT NULL,
+          comparisons_count INTEGER DEFAULT 0,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `);
       
@@ -130,16 +130,16 @@ const createTables = async () => {
         )
       `);
       
-      // Users table
+      // Comparisons table - must be created after items and users (references both)
       await client.query(`
-        CREATE TABLE IF NOT EXISTS users (
+        CREATE TABLE IF NOT EXISTS comparisons (
           id SERIAL PRIMARY KEY,
-          email VARCHAR(255) UNIQUE NOT NULL,
-          username VARCHAR(100) UNIQUE NOT NULL,
-          password_hash TEXT NOT NULL,
-          comparisons_count INTEGER DEFAULT 0,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          item1_id INTEGER NOT NULL REFERENCES items(id),
+          item2_id INTEGER NOT NULL REFERENCES items(id),
+          winner_id INTEGER NOT NULL REFERENCES items(id),
+          user_session_id VARCHAR(255),
+          user_id INTEGER REFERENCES users(id),
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `);
       
