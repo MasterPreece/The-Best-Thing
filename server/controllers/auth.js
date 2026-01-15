@@ -27,99 +27,195 @@ const register = async (req, res) => {
     return res.status(400).json({ error: 'Username must be 3-20 characters (letters, numbers, underscore only)' });
   }
 
+  const dbType = db.getDbType();
   const dbInstance = db.getDb();
 
   try {
-    // Check if email or username already exists
-    dbInstance.get(`
-      SELECT id FROM users WHERE email = ? OR username = ?
-    `, [email, username], async (err, existingUser) => {
-      if (err) {
-        console.error('Error checking existing user:', err);
-        return res.status(500).json({ error: 'Database error' });
-      }
+    // Hash password first
+    const passwordHash = await hashPassword(password);
 
-      if (existingUser) {
-        // Check which one is duplicate
-        dbInstance.get(`
-          SELECT id FROM users WHERE email = ?
-        `, [email], (err, emailUser) => {
-          if (emailUser) {
+    if (dbType === 'postgres') {
+      // PostgreSQL: Use async/await
+      try {
+        // Check if email or username already exists
+        const existingResult = await dbInstance.query(`
+          SELECT id, email, username FROM users WHERE email = $1 OR username = $2
+        `, [email, username]);
+        
+        if (existingResult.rows.length > 0) {
+          const existing = existingResult.rows[0];
+          if (existing.email === email) {
             return res.status(400).json({ error: 'Email already registered' });
           } else {
             return res.status(400).json({ error: 'Username already taken' });
           }
-        });
-        return;
-      }
-
-      // Hash password
-      const passwordHash = await hashPassword(password);
-
-      // Create user
-      dbInstance.run(`
-        INSERT INTO users (email, username, password_hash)
-        VALUES (?, ?, ?)
-      `, [email, username, passwordHash], async function(err) {
-        if (err) {
-          console.error('Error creating user:', err);
-          return res.status(500).json({ error: 'Failed to create account' });
         }
 
-        const userId = this.lastID;
+        // Insert user
+        const insertResult = await dbInstance.query(`
+          INSERT INTO users (email, username, password_hash)
+          VALUES ($1, $2, $3)
+          RETURNING id
+        `, [email, username, passwordHash]);
+        
+        const userId = insertResult.rows[0].id;
 
         // Link anonymous session votes to new user account
-        const sessionId = req.body.sessionId; // Optional: link previous anonymous votes
+        const sessionId = req.body.sessionId;
         if (sessionId) {
-          dbInstance.run(`
+          await dbInstance.query(`
             UPDATE comparisons
-            SET user_id = ?
-            WHERE user_session_id = ? AND user_id IS NULL
-          `, [userId, sessionId], (err) => {
-            if (err) {
-              console.error('Error linking anonymous votes:', err);
-              // Don't fail registration if this fails
-            }
+            SET user_id = $1
+            WHERE user_session_id = $2 AND user_id IS NULL
+          `, [userId, sessionId]).catch(err => {
+            console.error('Error linking anonymous votes:', err);
           });
 
           // Update user comparisons count
-          dbInstance.get(`
-            SELECT COUNT(*) as count FROM comparisons WHERE user_id = ?
-          `, [userId], (err, row) => {
-            if (!err && row) {
-              dbInstance.run(`
-                UPDATE users SET comparisons_count = ? WHERE id = ?
-              `, [row.count, userId], () => {});
-            }
-          });
+          const countResult = await dbInstance.query(`
+            SELECT COUNT(*) as count FROM comparisons WHERE user_id = $1
+          `, [userId]).catch(() => ({ rows: [{ count: '0' }] }));
+          
+          if (countResult.rows[0]) {
+            await dbInstance.query(`
+              UPDATE users SET comparisons_count = $1 WHERE id = $2
+            `, [countResult.rows[0].count, userId]).catch(() => {});
+          }
         }
 
         // Generate token
         const token = generateToken(userId);
 
-        // Get user stats
-        dbInstance.get(`
+        // Get user data
+        const userResult = await dbInstance.query(`
           SELECT id, email, username, comparisons_count, created_at
-          FROM users WHERE id = ?
-        `, [userId], (err, user) => {
+          FROM users WHERE id = $1
+        `, [userId]);
+        
+        const user = userResult.rows[0];
+        
+        res.json({
+          success: true,
+          token,
+          user: {
+            id: user.id,
+            email: user.email,
+            username: user.username,
+            comparisonsCount: parseInt(user.comparisons_count) || 0,
+            createdAt: user.created_at
+          }
+        });
+      } catch (dbErr) {
+        console.error('Error creating user (PostgreSQL):', dbErr);
+        
+        // Check for duplicate email/username
+        if (dbErr.code === '23505') { // Unique violation
+          try {
+            const emailCheck = await dbInstance.query('SELECT id FROM users WHERE email = $1', [email]);
+            if (emailCheck.rows.length > 0) {
+              return res.status(400).json({ error: 'Email already registered' });
+            }
+            const usernameCheck = await dbInstance.query('SELECT id FROM users WHERE username = $1', [username]);
+            if (usernameCheck.rows.length > 0) {
+              return res.status(400).json({ error: 'Username already taken' });
+            }
+          } catch (checkErr) {
+            // Fall through to generic error
+          }
+        }
+        
+        return res.status(500).json({ error: 'Failed to create account' });
+      }
+    } else {
+      // SQLite: Use callback-style API
+      // Check if email or username already exists
+      dbInstance.get(`
+        SELECT id FROM users WHERE email = ? OR username = ?
+      `, [email, username], async (err, existingUser) => {
+        if (err) {
+          console.error('Error checking existing user:', err);
+          return res.status(500).json({ error: 'Database error' });
+        }
+
+        if (existingUser) {
+          // Check which one is duplicate
+          dbInstance.get(`
+            SELECT id FROM users WHERE email = ?
+          `, [email], (err, emailUser) => {
+            if (emailUser) {
+              return res.status(400).json({ error: 'Email already registered' });
+            } else {
+              return res.status(400).json({ error: 'Username already taken' });
+            }
+          });
+          return;
+        }
+
+        // Create user
+        dbInstance.run(`
+          INSERT INTO users (email, username, password_hash)
+          VALUES (?, ?, ?)
+        `, [email, username, passwordHash], async function(err) {
           if (err) {
-            return res.status(500).json({ error: 'Failed to fetch user data' });
+            console.error('Error creating user:', err);
+            return res.status(500).json({ error: 'Failed to create account' });
           }
 
-          res.json({
-            success: true,
-            token,
-            user: {
-              id: user.id,
-              email: user.email,
-              username: user.username,
-              comparisonsCount: user.comparisons_count,
-              createdAt: user.created_at
+          const userId = this.lastID;
+
+          // Link anonymous session votes to new user account
+          const sessionId = req.body.sessionId;
+          if (sessionId) {
+            dbInstance.run(`
+              UPDATE comparisons
+              SET user_id = ?
+              WHERE user_session_id = ? AND user_id IS NULL
+            `, [userId, sessionId], (err) => {
+              if (err) {
+                console.error('Error linking anonymous votes:', err);
+              }
+            });
+
+            // Update user comparisons count
+            dbInstance.get(`
+              SELECT COUNT(*) as count FROM comparisons WHERE user_id = ?
+            `, [userId], (err, row) => {
+              if (!err && row) {
+                dbInstance.run(`
+                  UPDATE users SET comparisons_count = ? WHERE id = ?
+                `, [row.count, userId], () => {});
+              }
+            });
+          }
+
+          // Generate token
+          const token = generateToken(userId);
+
+          // Get user stats
+          dbInstance.get(`
+            SELECT id, email, username, comparisons_count, created_at
+            FROM users WHERE id = ?
+          `, [userId], (err, user) => {
+            if (err) {
+              console.error('Error fetching user after registration:', err);
+              return res.status(500).json({ error: 'Failed to fetch user data' });
             }
+
+            res.json({
+              success: true,
+              token,
+              user: {
+                id: user.id,
+                email: user.email,
+                username: user.username,
+                comparisonsCount: user.comparisons_count,
+                createdAt: user.created_at
+              }
+            });
           });
         });
       });
-    });
+    }
   } catch (error) {
     console.error('Error in register:', error);
     res.status(500).json({ error: 'Internal server error' });
