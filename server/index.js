@@ -1,0 +1,59 @@
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const db = require('./database');
+const apiRoutes = require('./routes');
+const scheduler = require('./utils/scheduler');
+const { runMigrations } = require('./utils/db-migration');
+
+const app = express();
+// Railway sets PORT automatically, fallback to 3001 for local dev
+const PORT = process.env.PORT || 3001;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// API Routes
+app.use('/api', apiRoutes);
+
+// Only serve React build in production or if build exists
+const buildPath = path.join(__dirname, '../client/build');
+const buildIndexPath = path.join(buildPath, 'index.html');
+const fs = require('fs');
+
+if (fs.existsSync(buildIndexPath)) {
+  // Serve static files from React build
+  app.use(express.static(buildPath));
+  
+  // Serve React app for all non-API routes
+  app.get('*', (req, res) => {
+    res.sendFile(buildIndexPath);
+  });
+} else {
+  // In development, just serve a message if accessing root
+  app.get('/', (req, res) => {
+    res.json({
+      message: 'API server is running. React dev server should be running on port 3000.',
+      api: 'http://localhost:3001/api',
+      note: 'Run "npm run dev" to start both servers, or "cd client && npm start" for React dev server'
+    });
+  });
+}
+
+// Initialize database and start server
+db.init().then(() => {
+  // Run migrations
+  return runMigrations();
+}).then(() => {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    
+    // Start the scheduler to grow the database over time
+    scheduler.startScheduler();
+  });
+}).catch(err => {
+  console.error('Failed to initialize database:', err);
+  process.exit(1);
+});
+

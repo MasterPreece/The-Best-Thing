@@ -1,0 +1,11 @@
+node_modules/
+client/node_modules/
+.git/
+.env
+.env.local
+*.log
+.DS_Store
+client/build/
+*.sqlite
+*.sqlite3
+
