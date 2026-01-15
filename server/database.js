@@ -195,6 +195,7 @@ const createTables = async () => {
           item2_id INTEGER NOT NULL,
           winner_id INTEGER NOT NULL,
           user_session_id TEXT,
+          user_id INTEGER REFERENCES users(id),
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (item1_id) REFERENCES items(id),
           FOREIGN KEY (item2_id) REFERENCES items(id),
@@ -228,6 +229,7 @@ const createTables = async () => {
         db.run(`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_user_session_id ON comparisons(user_session_id)`);
         db.run(`CREATE INDEX IF NOT EXISTS idx_users_comparisons ON users(comparisons_count DESC)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_user_id ON comparisons(user_id)`);
         
         // Enable foreign keys for SQLite
         db.run(`PRAGMA foreign_keys = ON`, (err) => {
