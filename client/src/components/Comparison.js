@@ -15,6 +15,7 @@ const Comparison = ({ userSessionId }) => {
   const [itemStats, setItemStats] = useState({ item1: null, item2: null });
   const [showAccountPrompt, setShowAccountPrompt] = useState(false);
   const [comparisonCount, setComparisonCount] = useState(0);
+  const [globalStats, setGlobalStats] = useState(null);
   const { token, isAuthenticated } = useAuth();
 
   const showToast = (message, type = 'success') => {
@@ -84,12 +85,23 @@ const Comparison = ({ userSessionId }) => {
 
   useEffect(() => {
     fetchComparison();
+    fetchGlobalStats();
     
     // Check comparison count for anonymous users
     if (!isAuthenticated && userSessionId) {
       checkComparisonCount();
     }
   }, [fetchComparison, isAuthenticated, userSessionId, checkComparisonCount]);
+
+  const fetchGlobalStats = async () => {
+    try {
+      const response = await axios.get('/api/stats');
+      setGlobalStats(response.data);
+    } catch (error) {
+      console.error('Error fetching global stats:', error);
+      // Non-critical, continue without stats
+    }
+  };
 
   const handleVote = useCallback(async (winnerId) => {
     if (voting || !items || loading) return;
@@ -122,6 +134,7 @@ const Comparison = ({ userSessionId }) => {
       // Wait a moment to show the selection, then fetch new comparison
       setTimeout(() => {
         fetchComparison();
+        fetchGlobalStats(); // Update global stats after vote
         // Update comparison count
         if (!isAuthenticated && userSessionId) {
           checkComparisonCount();
@@ -186,6 +199,56 @@ const Comparison = ({ userSessionId }) => {
     showToast('Account created! Your votes are now tracked.', 'success');
   };
 
+  const handleShare = async () => {
+    if (!items) return;
+    
+    const shareText = `Which is better: ${items.item1.title} vs ${items.item2.title}? Vote on The Best Thing!`;
+    const shareUrl = window.location.href;
+    
+    // Try native share API (mobile/desktop)
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'The Best Thing - Vote Now!',
+          text: shareText,
+          url: shareUrl
+        });
+        showToast('Shared successfully!', 'success');
+      } catch (error) {
+        // User cancelled or error
+        if (error.name !== 'AbortError') {
+          copyToClipboard(shareUrl, shareText);
+        }
+      }
+    } else {
+      // Fallback: copy to clipboard
+      copyToClipboard(shareUrl, shareText);
+    }
+  };
+
+  const copyToClipboard = (url, text) => {
+    navigator.clipboard.writeText(url).then(() => {
+      showToast('Link copied to clipboard!', 'success');
+    }).catch(() => {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = url;
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        showToast('Link copied to clipboard!', 'success');
+      } catch (err) {
+        showToast('Failed to copy link', 'error');
+      }
+      document.body.removeChild(textArea);
+    });
+  };
+
+  const getWikipediaUrl = (title) => {
+    return `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/\s+/g, '_'))}`;
+  };
+
   if (loading && !items) {
     return (
       <div className="comparison-container">
@@ -247,7 +310,7 @@ const Comparison = ({ userSessionId }) => {
       )}
 
       <div className="comparison-header">
-        <h1>Which is the Better Thing? 🎯</h1>
+        <h1>What is the Best Thing? 🎯</h1>
         <p className="subtitle">
           Click on the one you think is better!
           <br />
@@ -255,6 +318,21 @@ const Comparison = ({ userSessionId }) => {
             💡 Use ← → arrows or A/D keys to vote • Space/S to skip
           </span>
         </p>
+        {globalStats && (
+          <div className="global-stats">
+            <div className="stat-badge">
+              <strong>{globalStats.totalComparisons.toLocaleString()}</strong> total votes
+            </div>
+            <div className="stat-badge">
+              <strong>{globalStats.totalItems.toLocaleString()}</strong> items ranked
+            </div>
+            {globalStats.todayComparisons > 0 && (
+              <div className="stat-badge highlight">
+                <strong>{globalStats.todayComparisons.toLocaleString()}</strong> today
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="comparison-controls">
@@ -265,6 +343,13 @@ const Comparison = ({ userSessionId }) => {
           title="Skip this comparison (Space or S)"
         >
           ⏭ Skip
+        </button>
+        <button
+          onClick={handleShare}
+          className="share-button"
+          title="Share this comparison"
+        >
+          📤 Share
         </button>
       </div>
 
@@ -306,7 +391,21 @@ const Comparison = ({ userSessionId }) => {
             )}
           </div>
           <div className="item-info">
-            <h2 className="item-title">{items.item1.title}</h2>
+            <h2 className="item-title">
+              <a
+                href={getWikipediaUrl(items.item1.title)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="item-title-link"
+                onClick={(e) => e.stopPropagation()}
+                title="Learn more on Wikipedia"
+              >
+                {items.item1.title}
+              </a>
+            </h2>
+            {items.item1.description && (
+              <p className="item-description">{items.item1.description}</p>
+            )}
             {isItem1Selected && <div className="vote-badge">✓ Voted!</div>}
             {voting && !isItem1Selected && (
               <div className="vote-loading">Processing...</div>
@@ -355,7 +454,21 @@ const Comparison = ({ userSessionId }) => {
             )}
           </div>
           <div className="item-info">
-            <h2 className="item-title">{items.item2.title}</h2>
+            <h2 className="item-title">
+              <a
+                href={getWikipediaUrl(items.item2.title)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="item-title-link"
+                onClick={(e) => e.stopPropagation()}
+                title="Learn more on Wikipedia"
+              >
+                {items.item2.title}
+              </a>
+            </h2>
+            {items.item2.description && (
+              <p className="item-description">{items.item2.description}</p>
+            )}
             {isItem2Selected && <div className="vote-badge">✓ Voted!</div>}
             {voting && !isItem2Selected && (
               <div className="vote-loading">Processing...</div>

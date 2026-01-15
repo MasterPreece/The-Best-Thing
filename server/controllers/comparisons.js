@@ -10,11 +10,13 @@ const getRandomComparison = (req, res) => {
     console.error('Error checking/fetching Wikipedia items:', err);
   });
   
-  // Get two random items
+  // Get two random items (prefer items with descriptions)
   dbInstance.all(`
     SELECT id, title, image_url, description, elo_rating
     FROM items
-    ORDER BY RANDOM()
+    ORDER BY 
+      CASE WHEN description IS NOT NULL AND description != '' THEN 0 ELSE 1 END,
+      RANDOM()
     LIMIT 2
   `, (err, rows) => {
     if (err) {

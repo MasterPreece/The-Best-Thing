@@ -20,6 +20,72 @@
   margin-bottom: 1rem;
 }
 
+.search-container {
+  position: relative;
+  max-width: 600px;
+  margin: 1.5rem auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 1rem;
+}
+
+.search-input {
+  flex: 1;
+  padding: 1rem 1.5rem;
+  font-size: 1.1rem;
+  border: none;
+  border-radius: 25px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #333;
+  outline: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+  -webkit-appearance: none;
+  min-height: 44px;
+}
+
+.search-input:focus {
+  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+  transform: translateY(-2px);
+}
+
+.search-input::placeholder {
+  color: #999;
+}
+
+.clear-search-button {
+  position: absolute;
+  right: 1rem;
+  background: rgba(0, 0, 0, 0.1);
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  color: #666;
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  min-width: 36px;
+  min-height: 36px;
+  touch-action: manipulation;
+}
+
+.clear-search-button:hover {
+  background: rgba(0, 0, 0, 0.2);
+  transform: scale(1.1);
+}
+
+.search-results-info {
+  margin-top: 1rem;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1rem;
+  font-style: italic;
+}
+
 .limit-controls {
   display: inline-flex;
   align-items: center;
@@ -28,6 +94,7 @@
   padding: 0.5rem 1rem;
   border-radius: 10px;
   backdrop-filter: blur(10px);
+  margin-top: 1rem;
 }
 
 .limit-select {
@@ -56,6 +123,7 @@
   align-items: center;
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
   transition: transform 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
 }
 
 .ranking-item:hover {
@@ -224,24 +292,71 @@
 }
 
 @media (max-width: 768px) {
+  .rankings-header h1 {
+    font-size: 2rem;
+    padding: 0 1rem;
+  }
+
+  .rankings-header p {
+    font-size: 1rem;
+    padding: 0 1rem;
+  }
+
+  .search-container {
+    margin: 1rem auto;
+    padding: 0 1rem;
+  }
+
+  .search-input {
+    padding: 0.875rem 1.25rem;
+    font-size: 1rem;
+  }
+
+  .limit-controls {
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 0.75rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .limit-select {
+    font-size: 0.9rem;
+    padding: 0.4rem;
+  }
+
   .ranking-item {
     grid-template-columns: auto 1fr;
-    grid-template-rows: auto auto;
+    grid-template-rows: auto auto auto;
+    padding: 1.25rem;
+    gap: 1rem;
   }
 
   .rank-number {
     grid-column: 1;
     grid-row: 1;
+    font-size: 1.75rem;
+    min-width: 50px;
   }
 
   .rank-image {
     grid-column: 1;
     grid-row: 2;
+    width: 70px;
+    height: 70px;
   }
 
   .rank-info {
     grid-column: 2;
     grid-row: 1 / 3;
+    min-width: 0;
+  }
+
+  .rank-title {
+    font-size: 1.25rem;
+  }
+
+  .rank-description {
+    font-size: 0.85rem;
   }
 
   .rank-stats {
@@ -249,13 +364,94 @@
     flex-direction: row;
     justify-content: space-around;
     text-align: center;
-    margin-top: 1rem;
-    padding-top: 1rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
     border-top: 1px solid #eee;
+    min-width: auto;
+  }
+
+  .stat {
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .rankings-container {
+    padding: 1rem 0;
+  }
+
+  .rankings-header {
+    margin-bottom: 2rem;
   }
 
   .rankings-header h1 {
-    font-size: 2rem;
+    font-size: 1.75rem;
+    line-height: 1.3;
+  }
+
+  .rankings-header p {
+    font-size: 0.9rem;
+  }
+
+  .search-container {
+    margin: 1rem auto 0.75rem;
+  }
+
+  .search-input {
+    padding: 0.75rem 1rem;
+    font-size: 0.95rem;
+  }
+
+  .clear-search-button {
+    right: 0.75rem;
+    width: 32px;
+    height: 32px;
+    font-size: 1rem;
+  }
+
+  .search-results-info {
+    font-size: 0.9rem;
+    padding: 0 1rem;
+  }
+
+  .limit-controls {
+    font-size: 0.9rem;
+  }
+
+  .ranking-item {
+    padding: 1rem;
+    gap: 0.75rem;
+    border-radius: 12px;
+  }
+
+  .rank-number {
+    font-size: 1.5rem;
+    min-width: 40px;
+  }
+
+  .rank-image {
+    width: 60px;
+    height: 60px;
+  }
+
+  .rank-title {
+    font-size: 1.1rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .rank-description {
+    font-size: 0.8rem;
+    line-height: 1.3;
+  }
+
+  .rank-stats {
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+  }
+
+  .stat {
+    font-size: 0.8rem;
   }
 }
 
