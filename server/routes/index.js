@@ -29,5 +29,10 @@ router.get('/auth/stats', authenticate, authController.getUserStats);
 // Stats
 router.get('/stats', statsController.getGlobalStats);
 
+// Health check
+router.get('/health', (req, res) => {
+  res.json({ status: 'ok', message: 'API is running' });
+});
+
 module.exports = router;
 
