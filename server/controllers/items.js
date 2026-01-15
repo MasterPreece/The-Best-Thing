@@ -151,20 +151,20 @@ const searchItem = (req, res) => {
 
 const getItemById = async (req, res) => {
   const { id } = req.params;
-  const dbInstance = db.getDb();
   const dbType = db.getDbType();
   
   try {
     // Get basic item info
     let item = null;
     if (dbType === 'postgres') {
-      const result = await dbInstance.query(`
+      const result = await db.query(`
         SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses, created_at
         FROM items
         WHERE id = $1
       `, [id]);
       item = result.rows[0] || null;
     } else {
+      const dbInstance = db.getDb();
       item = await new Promise((resolve, reject) => {
         dbInstance.get(`
           SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses, created_at
@@ -184,13 +184,14 @@ const getItemById = async (req, res) => {
     // Get ranking position
     let rank = null;
     if (dbType === 'postgres') {
-      const rankResult = await dbInstance.query(`
+      const rankResult = await db.query(`
         SELECT COUNT(*) + 1 as rank
         FROM items
         WHERE elo_rating > $1
       `, [item.elo_rating]);
       rank = parseInt(rankResult.rows[0]?.rank || 0);
     } else {
+      const dbInstance = db.getDb();
       const rankRow = await new Promise((resolve) => {
         dbInstance.get(`
           SELECT COUNT(*) + 1 as rank
@@ -211,7 +212,7 @@ const getItemById = async (req, res) => {
     // Get recent comparisons involving this item (last 10)
     let recentComparisons = [];
     if (dbType === 'postgres') {
-      const comparisonsResult = await dbInstance.query(`
+      const comparisonsResult = await db.query(`
         SELECT 
           c.id,
           c.created_at,
@@ -227,6 +228,7 @@ const getItemById = async (req, res) => {
       `, [id]);
       recentComparisons = comparisonsResult.rows || [];
     } else {
+      const dbInstance = db.getDb();
       recentComparisons = await new Promise((resolve) => {
         dbInstance.all(`
           SELECT 
@@ -260,7 +262,7 @@ const getItemById = async (req, res) => {
     // Get most common opponents
     let topOpponents = [];
     if (dbType === 'postgres') {
-      const opponentsResult = await dbInstance.query(`
+      const opponentsResult = await db.query(`
         SELECT 
           CASE 
             WHEN c.item1_id = $1 THEN c.item2_id
@@ -287,6 +289,7 @@ const getItemById = async (req, res) => {
       `, [id]);
       topOpponents = opponentsResult.rows || [];
     } else {
+      const dbInstance = db.getDb();
       topOpponents = await new Promise((resolve) => {
         dbInstance.all(`
           SELECT 
