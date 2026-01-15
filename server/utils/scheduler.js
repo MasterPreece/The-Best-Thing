@@ -3,6 +3,7 @@ const wikipediaFetcher = require('../services/wikipedia-fetcher');
 /**
  * Schedule periodic database growth checks
  * Runs every 10 minutes to see if we need to fetch more items
+ * Now includes continuous growth - database will keep growing over time
  */
 const startScheduler = () => {
   // Check every 10 minutes
@@ -23,6 +24,7 @@ const startScheduler = () => {
   }, INTERVAL);
   
   console.log('Wikipedia auto-fetch scheduler started (checks every 10 minutes)');
+  console.log('Database will continue to grow: adding ~5 items every 30 minutes when above threshold');
 };
 
 module.exports = {

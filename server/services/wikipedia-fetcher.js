@@ -13,10 +13,15 @@ const MIN_ITEMS_THRESHOLD = 50;
 // Maximum items to fetch in one batch
 const BATCH_SIZE = 10;
 
+// Growth settings - continue adding items over time
+const GROWTH_BATCH_SIZE = 5; // Add 5 items at a time for continuous growth
+const GROWTH_INTERVAL = 30 * 60 * 1000; // Add items every 30 minutes (when above threshold)
+
 // Track if we're currently fetching to avoid duplicate requests
 let isFetching = false;
 let lastFetchTime = 0;
 const MIN_FETCH_INTERVAL = 60000; // Only fetch once per minute max
+let lastGrowthFetch = 0; // Track last growth fetch time
 
 /**
  * Get random Wikipedia articles
@@ -204,6 +209,7 @@ const fetchPageInfo = async (title) => {
 
 /**
  * Check if database needs more items
+ * Now includes continuous growth - adds items even when above threshold
  */
 const checkAndFetchIfNeeded = async () => {
   const dbInstance = db.getDb();
@@ -219,20 +225,31 @@ const checkAndFetchIfNeeded = async () => {
       }
       
       const itemCount = row.count;
-      
-      // If we have enough items, don't fetch
-      if (itemCount >= MIN_ITEMS_THRESHOLD) {
-        return resolve();
-      }
+      const now = Date.now();
       
       // Check if we're already fetching or recently fetched
-      const now = Date.now();
       if (isFetching || (now - lastFetchTime) < MIN_FETCH_INTERVAL) {
         return resolve();
       }
       
-      // Start fetching in background (don't block)
-      fetchMoreItems(itemCount).then(() => resolve()).catch(() => resolve());
+      // If below threshold, fetch to reach minimum
+      if (itemCount < MIN_ITEMS_THRESHOLD) {
+        console.log(`Database has ${itemCount} items (below threshold of ${MIN_ITEMS_THRESHOLD}). Fetching more...`);
+        fetchMoreItems(itemCount).then(() => resolve()).catch(() => resolve());
+        return;
+      }
+      
+      // If above threshold, continue growing slowly (every 30 minutes)
+      // This ensures the database keeps growing as people use the tool
+      if ((now - lastGrowthFetch) >= GROWTH_INTERVAL) {
+        console.log(`Database has ${itemCount} items. Adding ${GROWTH_BATCH_SIZE} more items for continuous growth...`);
+        lastGrowthFetch = now;
+        fetchMoreItems(itemCount, true, GROWTH_BATCH_SIZE).then(() => resolve()).catch(() => resolve());
+        return;
+      }
+      
+      // Nothing to do right now
+      resolve();
     });
   });
 };
@@ -241,33 +258,33 @@ const checkAndFetchIfNeeded = async () => {
  * Fetch more items to add to database
  * Mixes popular and random articles for variety
  */
-const fetchMoreItems = async (currentCount = 0, usePopular = true) => {
+const fetchMoreItems = async (currentCount = 0, usePopular = true, batchSize = BATCH_SIZE) => {
   if (isFetching) return;
   
   isFetching = true;
   lastFetchTime = Date.now();
   
-  console.log(`Database has ${currentCount} items. Fetching more from Wikipedia...`);
+  console.log(`Database has ${currentCount} items. Fetching ${batchSize} more from Wikipedia...`);
   
   try {
     let titles = [];
     
     // Alternate between popular and random articles for variety
     // Or use 50/50 mix if usePopular is true
-    if (usePopular && currentCount % (BATCH_SIZE * 2) < BATCH_SIZE) {
+    if (usePopular && currentCount % (batchSize * 2) < batchSize) {
       // Fetch popular articles
       console.log('Fetching popular Wikipedia articles...');
-      titles = await getPopularArticles(Math.ceil(BATCH_SIZE / 2));
+      titles = await getPopularArticles(Math.ceil(batchSize / 2));
       
       // Fill remaining with random if needed
-      if (titles.length < BATCH_SIZE) {
-        const randomTitles = await getRandomArticles(BATCH_SIZE - titles.length);
+      if (titles.length < batchSize) {
+        const randomTitles = await getRandomArticles(batchSize - titles.length);
         titles = [...titles, ...randomTitles];
       }
     } else {
       // Fetch random articles
       console.log('Fetching random Wikipedia articles...');
-      titles = await getRandomArticles(BATCH_SIZE);
+      titles = await getRandomArticles(batchSize);
     }
     
     if (titles.length === 0) {
@@ -345,7 +362,7 @@ const fetchMoreItems = async (currentCount = 0, usePopular = true) => {
     
     console.log(`Batch complete: Added ${inserted} new items, skipped ${skipped} existing/invalid items`);
     
-    // Check if we need more
+    // Check if we need more (only if below threshold)
     dbInstance.get(`SELECT COUNT(*) as count FROM items`, [], async (err, row) => {
       if (!err && row.count < MIN_ITEMS_THRESHOLD) {
         // Still need more, but wait a bit before fetching again
