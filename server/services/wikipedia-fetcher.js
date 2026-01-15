@@ -54,10 +54,12 @@ const getRandomArticles = async (count = 10) => {
  * Get popular/most viewed Wikipedia articles
  * Uses the "mostviewed" list which returns articles with the most views in a time period
  * Tries multiple sources to get variety
+ * Note: Popular articles are more likely to have images
  */
 const getPopularArticles = async (count = 10) => {
   try {
     // Get most viewed articles from the past day
+    // These are more likely to have images since they're well-maintained
     const response = await axios.get(WIKIPEDIA_API, {
       params: {
         action: 'query',
@@ -74,7 +76,7 @@ const getPopularArticles = async (count = 10) => {
 
     let articles = response.data.query?.mostviewed || [];
     
-    // If we don't have enough, supplement with featured articles
+    // If we don't have enough, supplement with featured articles (which also tend to have images)
     if (articles.length < count) {
       console.log(`Only got ${articles.length} from mostviewed, supplementing with featured articles...`);
       const featured = await getFeaturedArticles(count - articles.length);
@@ -155,23 +157,26 @@ const getFeaturedArticles = async (count = 10) => {
 
 /**
  * Fetch page information including image
+ * Tries multiple methods to get an image
  */
 const fetchPageInfo = async (title) => {
   try {
+    // First try: Get page with images using multiple image properties
     const response = await axios.get(WIKIPEDIA_API, {
       params: {
         action: 'query',
         format: 'json',
         titles: title,
-        prop: 'pageimages|extracts|pageprops',
-        piprop: 'original',
+        prop: 'pageimages|extracts|pageprops|images',
+        piprop: 'original|thumbnail',
+        pithumbsize: 500, // Larger size for better quality
         exintro: true,
         explaintext: true,
-        pithumbsize: 400,
-        redirects: 1
+        redirects: 1,
+        imlimit: 5 // Get up to 5 images to find a good one
       },
       headers: {
-        'User-Agent': 'TheBestThing/1.0 (https://github.com/yourusername/the-best-thing; contact@example.com)'
+        'User-Agent': 'TheBestThing/1.0 (https://github.com/MasterPreece/The-Best-Thing; contact@example.com)'
       }
     });
     
@@ -191,11 +196,24 @@ const fetchPageInfo = async (title) => {
     
     const wikipediaId = page.pageid || null;
     
+    // Try multiple sources for image (original, thumbnail, or first image from images list)
+    let imageUrl = null;
+    if (page.original?.source) {
+      imageUrl = page.original.source;
+    } else if (page.thumbnail?.source) {
+      imageUrl = page.thumbnail.source;
+    } else if (page.images && page.images.length > 0) {
+      // Try to get the first image file
+      // Note: images array contains filenames, we'd need another API call to get URLs
+      // For now, we'll skip this and rely on pageimages
+    }
+    
     return {
       wikipediaId,
       title: page.title,
-      imageUrl: page.original?.source || page.thumbnail?.source || null,
-      description: page.extract?.substring(0, 500) || ''
+      imageUrl,
+      description: page.extract?.substring(0, 500) || '',
+      hasImage: !!imageUrl
     };
   } catch (error) {
     if (error.response?.status === 403) {
@@ -300,6 +318,8 @@ const fetchMoreItems = async (currentCount = 0, usePopular = true, batchSize = B
     let skipped = 0;
     
     // Fetch details for each article with rate limiting
+    // Collect all page info first, then prioritize those with images
+    const pageInfos = [];
     for (let i = 0; i < titles.length; i++) {
       const title = titles[i];
       
@@ -322,6 +342,19 @@ const fetchMoreItems = async (currentCount = 0, usePopular = true, batchSize = B
         continue;
       }
       
+      pageInfos.push(pageInfo);
+    }
+    
+    // Prioritize items with images when inserting
+    // Sort: items with images first, then items without
+    pageInfos.sort((a, b) => {
+      if (a.hasImage && !b.hasImage) return -1;
+      if (!a.hasImage && b.hasImage) return 1;
+      return 0;
+    });
+    
+    // Process sorted items (those with images will be inserted first)
+    for (const pageInfo of pageInfos) {
       // Check if item already exists by title or wikipedia_id before inserting
       await new Promise((resolve) => {
         dbInstance.get(`
@@ -350,7 +383,8 @@ const fetchMoreItems = async (currentCount = 0, usePopular = true, batchSize = B
               skipped++;
             } else if (this.changes > 0) {
               inserted++;
-              console.log(`Added: ${pageInfo.title}`);
+              const imageStatus = pageInfo.hasImage ? '📷' : '❌';
+              console.log(`${imageStatus} Added: ${pageInfo.title}${pageInfo.hasImage ? '' : ' (no image)'}`);
             } else {
               skipped++;
             }
