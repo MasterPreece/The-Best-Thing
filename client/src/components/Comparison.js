@@ -93,6 +93,38 @@ const Comparison = ({ userSessionId }) => {
     }
   }, [userSessionId, isAuthenticated]);
 
+  const fetchGlobalStats = useCallback(async () => {
+    try {
+      const response = await axios.get('/api/stats');
+      const newStats = response.data;
+      
+      // Animate number changes if stats already exist
+      setGlobalStats(prevStats => {
+        if (prevStats && statsRef.current) {
+          const elements = {
+            totalComparisons: statsRef.current.querySelector('.stat-total-comparisons'),
+            totalItems: statsRef.current.querySelector('.stat-total-items'),
+            todayComparisons: statsRef.current.querySelector('.stat-today-comparisons')
+          };
+          
+          if (elements.totalComparisons && newStats.totalComparisons !== prevStats.totalComparisons) {
+            animateNumber(elements.totalComparisons, prevStats.totalComparisons, newStats.totalComparisons, 800);
+          }
+          if (elements.totalItems && newStats.totalItems !== prevStats.totalItems) {
+            animateNumber(elements.totalItems, prevStats.totalItems, newStats.totalItems, 800);
+          }
+          if (elements.todayComparisons && newStats.todayComparisons !== prevStats.todayComparisons) {
+            animateNumber(elements.todayComparisons, prevStats.todayComparisons, newStats.todayComparisons, 800);
+          }
+        }
+        return newStats;
+      });
+    } catch (error) {
+      console.error('Error fetching global stats:', error);
+      // Non-critical, continue without stats
+    }
+  }, []);
+
   useEffect(() => {
     fetchComparison();
     fetchGlobalStats();
@@ -101,38 +133,7 @@ const Comparison = ({ userSessionId }) => {
     if (!isAuthenticated && userSessionId) {
       checkComparisonCount();
     }
-  }, [fetchComparison, isAuthenticated, userSessionId, checkComparisonCount]);
-
-  const fetchGlobalStats = async () => {
-    try {
-      const response = await axios.get('/api/stats');
-      const newStats = response.data;
-      
-      // Animate number changes if stats already exist
-      if (globalStats && statsRef.current) {
-        const elements = {
-          totalComparisons: statsRef.current.querySelector('.stat-total-comparisons'),
-          totalItems: statsRef.current.querySelector('.stat-total-items'),
-          todayComparisons: statsRef.current.querySelector('.stat-today-comparisons')
-        };
-        
-        if (elements.totalComparisons && newStats.totalComparisons !== globalStats.totalComparisons) {
-          animateNumber(elements.totalComparisons, globalStats.totalComparisons, newStats.totalComparisons, 800);
-        }
-        if (elements.totalItems && newStats.totalItems !== globalStats.totalItems) {
-          animateNumber(elements.totalItems, globalStats.totalItems, newStats.totalItems, 800);
-        }
-        if (elements.todayComparisons && newStats.todayComparisons !== globalStats.todayComparisons) {
-          animateNumber(elements.todayComparisons, globalStats.todayComparisons, newStats.todayComparisons, 800);
-        }
-      }
-      
-      setGlobalStats(newStats);
-    } catch (error) {
-      console.error('Error fetching global stats:', error);
-      // Non-critical, continue without stats
-    }
-  };
+  }, [fetchComparison, fetchGlobalStats, isAuthenticated, userSessionId, checkComparisonCount]);
 
   const handleVote = useCallback(async (winnerId) => {
     if (voting || !items || loading) return;
@@ -193,7 +194,7 @@ const Comparison = ({ userSessionId }) => {
     } finally {
       setVoting(false);
     }
-  }, [voting, items, loading, token, userSessionId, isAuthenticated, fetchComparison, checkComparisonCount]);
+  }, [voting, items, loading, token, userSessionId, isAuthenticated, fetchComparison, fetchGlobalStats, checkComparisonCount]);
 
   const handleSkip = useCallback(async () => {
     if (voting || loading) return;
