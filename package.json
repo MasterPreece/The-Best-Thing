@@ -10,7 +10,8 @@
     "build": "cd client && npm run build",
     "start": "node server/index.js",
     "seed": "node server/scripts/seed-wikipedia.js",
-    "seed:large": "node server/scripts/seed-wikipedia.js 500"
+    "seed:large": "node server/scripts/seed-wikipedia.js 500",
+    "seed:popular": "node server/scripts/seed-popular.js"
   },
   "keywords": [
     "meme",

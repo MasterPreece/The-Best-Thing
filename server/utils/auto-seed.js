@@ -80,6 +80,68 @@ const getRandomArticles = async (count = 10) => {
 };
 
 /**
+ * Get popular/most viewed Wikipedia articles
+ */
+const getPopularArticles = async (count = 10) => {
+  try {
+    const response = await axios.get(WIKIPEDIA_API, {
+      params: {
+        action: 'query',
+        format: 'json',
+        list: 'mostviewed',
+        pvimlimit: count,
+        pvimnamespace: 0,
+        redirects: 1
+      },
+      headers: {
+        'User-Agent': 'TheBestThing/1.0 (https://github.com/MasterPreece/The-Best-Thing; contact@example.com)'
+      }
+    });
+
+    const articles = response.data.query?.mostviewed || [];
+    if (articles.length > 0) {
+      return articles.map(article => article.title);
+    }
+    
+    // Fallback to featured articles
+    return await getFeaturedArticles(count);
+  } catch (error) {
+    console.error('Error fetching popular articles:', error.message);
+    return await getFeaturedArticles(count);
+  }
+};
+
+/**
+ * Get featured articles (high-quality, well-maintained Wikipedia pages)
+ */
+const getFeaturedArticles = async (count = 10) => {
+  try {
+    const response = await axios.get(WIKIPEDIA_API, {
+      params: {
+        action: 'query',
+        format: 'json',
+        list: 'categorymembers',
+        cmtitle: 'Category:Featured articles',
+        cmnamespace: 0,
+        cmlimit: count * 2,
+        cmtype: 'page',
+        redirects: 1
+      },
+      headers: {
+        'User-Agent': 'TheBestThing/1.0 (https://github.com/MasterPreece/The-Best-Thing; contact@example.com)'
+      }
+    });
+
+    const members = response.data.query?.categorymembers || [];
+    const shuffled = members.sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, count).map(member => member.title);
+  } catch (error) {
+    console.error('Error fetching featured articles:', error.message);
+    return [];
+  }
+};
+
+/**
  * Auto-seed database if empty (runs in background)
  */
 const autoSeedIfEmpty = async () => {
@@ -103,8 +165,11 @@ const autoSeedIfEmpty = async () => {
       console.log(`Fetching ${INITIAL_SEED_COUNT} Wikipedia pages...`);
       
       try {
-        // Get random article titles
-        const titles = await getRandomArticles(INITIAL_SEED_COUNT);
+        // Mix of popular and random articles for initial seed
+        console.log('Fetching mix of popular and random articles...');
+        const popularTitles = await getPopularArticles(Math.ceil(INITIAL_SEED_COUNT / 2));
+        const randomTitles = await getRandomArticles(Math.floor(INITIAL_SEED_COUNT / 2));
+        const titles = [...popularTitles, ...randomTitles];
         
         if (titles.length === 0) {
           console.log('No articles retrieved for seeding');

@@ -33,7 +33,7 @@ const getRandomArticles = async (count = 10) => {
         redirects: 1
       },
       headers: {
-        'User-Agent': 'TheBestThing/1.0 (https://github.com/yourusername/the-best-thing; contact@example.com)'
+        'User-Agent': 'TheBestThing/1.0 (https://github.com/MasterPreece/The-Best-Thing; contact@example.com)'
       }
     });
 
@@ -41,6 +41,69 @@ const getRandomArticles = async (count = 10) => {
     return articles.map(article => article.title);
   } catch (error) {
     console.error('Error fetching random articles:', error.message);
+    return [];
+  }
+};
+
+/**
+ * Get popular/most viewed Wikipedia articles
+ * Uses the "mostviewed" list which returns articles with the most views in a time period
+ */
+const getPopularArticles = async (count = 10) => {
+  try {
+    // Get most viewed articles from the past day
+    const response = await axios.get(WIKIPEDIA_API, {
+      params: {
+        action: 'query',
+        format: 'json',
+        list: 'mostviewed',
+        pvimlimit: count,
+        pvimnamespace: 0, // Only main articles
+        redirects: 1
+      },
+      headers: {
+        'User-Agent': 'TheBestThing/1.0 (https://github.com/MasterPreece/The-Best-Thing; contact@example.com)'
+      }
+    });
+
+    const articles = response.data.query?.mostviewed || [];
+    return articles.map(article => article.title);
+  } catch (error) {
+    console.error('Error fetching popular articles:', error.message);
+    // Fallback to getting featured articles if mostviewed fails
+    return await getFeaturedArticles(count);
+  }
+};
+
+/**
+ * Get featured articles (high-quality, well-maintained Wikipedia pages)
+ * These are typically well-known topics
+ */
+const getFeaturedArticles = async (count = 10) => {
+  try {
+    // Get articles from the "Featured articles" category
+    const response = await axios.get(WIKIPEDIA_API, {
+      params: {
+        action: 'query',
+        format: 'json',
+        list: 'categorymembers',
+        cmtitle: 'Category:Featured articles',
+        cmnamespace: 0,
+        cmlimit: count * 2, // Get more to account for potential skips
+        cmtype: 'page',
+        redirects: 1
+      },
+      headers: {
+        'User-Agent': 'TheBestThing/1.0 (https://github.com/MasterPreece/The-Best-Thing; contact@example.com)'
+      }
+    });
+
+    const members = response.data.query?.categorymembers || [];
+    // Shuffle and take count
+    const shuffled = members.sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, count).map(member => member.title);
+  } catch (error) {
+    console.error('Error fetching featured articles:', error.message);
     return [];
   }
 };
@@ -136,8 +199,9 @@ const checkAndFetchIfNeeded = async () => {
 
 /**
  * Fetch more items to add to database
+ * Mixes popular and random articles for variety
  */
-const fetchMoreItems = async (currentCount = 0) => {
+const fetchMoreItems = async (currentCount = 0, usePopular = true) => {
   if (isFetching) return;
   
   isFetching = true;
@@ -146,16 +210,33 @@ const fetchMoreItems = async (currentCount = 0) => {
   console.log(`Database has ${currentCount} items. Fetching more from Wikipedia...`);
   
   try {
-    // Get random article titles
-    const titles = await getRandomArticles(BATCH_SIZE);
+    let titles = [];
+    
+    // Alternate between popular and random articles for variety
+    // Or use 50/50 mix if usePopular is true
+    if (usePopular && currentCount % (BATCH_SIZE * 2) < BATCH_SIZE) {
+      // Fetch popular articles
+      console.log('Fetching popular Wikipedia articles...');
+      titles = await getPopularArticles(Math.ceil(BATCH_SIZE / 2));
+      
+      // Fill remaining with random if needed
+      if (titles.length < BATCH_SIZE) {
+        const randomTitles = await getRandomArticles(BATCH_SIZE - titles.length);
+        titles = [...titles, ...randomTitles];
+      }
+    } else {
+      // Fetch random articles
+      console.log('Fetching random Wikipedia articles...');
+      titles = await getRandomArticles(BATCH_SIZE);
+    }
     
     if (titles.length === 0) {
-      console.log('No random articles retrieved');
+      console.log('No articles retrieved');
       isFetching = false;
       return;
     }
     
-    console.log(`Retrieved ${titles.length} random article titles. Fetching details...`);
+    console.log(`Retrieved ${titles.length} article titles. Fetching details...`);
     
     const dbInstance = db.getDb();
     let inserted = 0;
@@ -243,8 +324,109 @@ const fetchMoreItems = async (currentCount = 0) => {
   }
 };
 
+/**
+ * Fetch only popular articles (for manual seeding)
+ */
+const fetchPopularItemsOnly = async (count = 10) => {
+  if (isFetching) return;
+  
+  isFetching = true;
+  lastFetchTime = Date.now();
+  
+  console.log(`Fetching ${count} popular Wikipedia articles...`);
+  
+  try {
+    const titles = await getPopularArticles(count);
+    
+    if (titles.length === 0) {
+      console.log('No popular articles retrieved');
+      isFetching = false;
+      return { inserted: 0, skipped: 0 };
+    }
+    
+    console.log(`Retrieved ${titles.length} popular article titles. Fetching details...`);
+    
+    const dbInstance = db.getDb();
+    let inserted = 0;
+    let skipped = 0;
+    
+    // Fetch details for each article with rate limiting
+    for (let i = 0; i < titles.length; i++) {
+      const title = titles[i];
+      
+      // Rate limiting: wait between requests
+      if (i > 0) {
+        await new Promise(resolve => setTimeout(resolve, API_DELAY));
+      }
+      
+      const pageInfo = await fetchPageInfo(title);
+      
+      if (!pageInfo) {
+        skipped++;
+        continue;
+      }
+      
+      // Skip if pageid is missing (invalid page)
+      if (!pageInfo.wikipediaId) {
+        console.log(`Skipping ${pageInfo.title}: missing Wikipedia page ID`);
+        skipped++;
+        continue;
+      }
+      
+      // Check if item already exists by title or wikipedia_id before inserting
+      await new Promise((resolve) => {
+        dbInstance.get(`
+          SELECT id FROM items 
+          WHERE title = ? OR (wikipedia_id IS NOT NULL AND wikipedia_id = ?)
+          LIMIT 1
+        `, [pageInfo.title, pageInfo.wikipediaId], (err, existingItem) => {
+          if (err) {
+            console.error(`Error checking for duplicate ${pageInfo.title}:`, err);
+            skipped++;
+            return resolve();
+          }
+          
+          if (existingItem) {
+            skipped++;
+            return resolve();
+          }
+          
+          // Insert into database (ignore if constraint violated)
+          dbInstance.run(`
+            INSERT OR IGNORE INTO items (wikipedia_id, title, image_url, description)
+            VALUES (?, ?, ?, ?)
+          `, [pageInfo.wikipediaId, pageInfo.title, pageInfo.imageUrl, pageInfo.description], function(insertErr) {
+            if (insertErr) {
+              console.error(`Error inserting ${pageInfo.title}:`, insertErr);
+              skipped++;
+            } else if (this.changes > 0) {
+              inserted++;
+              console.log(`Added: ${pageInfo.title}`);
+            } else {
+              skipped++;
+            }
+            resolve();
+          });
+        });
+      });
+    }
+    
+    console.log(`Batch complete: Added ${inserted} new items, skipped ${skipped} existing/invalid items`);
+    isFetching = false;
+    
+    return { inserted, skipped };
+    
+  } catch (error) {
+    console.error('Error in fetchPopularItemsOnly:', error);
+    isFetching = false;
+    return { inserted: 0, skipped: 0 };
+  }
+};
+
 module.exports = {
   checkAndFetchIfNeeded,
-  fetchMoreItems
+  fetchMoreItems,
+  fetchPopularItemsOnly,
+  getPopularArticles
 };
 
