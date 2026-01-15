@@ -95,6 +95,14 @@
   border-radius: 10px;
   backdrop-filter: blur(10px);
   margin-top: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.total-items-info {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.8);
+  font-style: italic;
 }
 
 .limit-select {

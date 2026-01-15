@@ -1,28 +1,60 @@
 const db = require('../database');
 
 const getRankings = (req, res) => {
-  const limit = parseInt(req.query.limit) || 100;
+  let limit = parseInt(req.query.limit) || 100;
   const offset = parseInt(req.query.offset) || 0;
+  
+  // Cap at 10,000 to prevent performance issues, but allow "all" to work
+  if (limit > 10000) {
+    limit = 10000;
+  }
   
   const dbInstance = db.getDb();
   
-  dbInstance.all(`
-    SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses
-    FROM items
-    ORDER BY elo_rating DESC
-    LIMIT ? OFFSET ?
-  `, [limit, offset], (err, rows) => {
-    if (err) {
-      console.error('Error fetching rankings:', err);
-      return res.status(500).json({ error: 'Failed to fetch rankings' });
-    }
-    
-    res.json({
-      rankings: rows,
-      limit,
-      offset
+  // If limit is very large, just get all items (no LIMIT clause)
+  if (limit >= 10000) {
+    dbInstance.all(`
+      SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses
+      FROM items
+      ORDER BY elo_rating DESC
+    `, [], (err, rows) => {
+      if (err) {
+        console.error('Error fetching rankings:', err);
+        return res.status(500).json({ error: 'Failed to fetch rankings' });
+      }
+      
+      res.json({
+        rankings: rows,
+        limit: rows.length,
+        offset: 0,
+        total: rows.length
+      });
     });
-  });
+  } else {
+    dbInstance.all(`
+      SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses
+      FROM items
+      ORDER BY elo_rating DESC
+      LIMIT ? OFFSET ?
+    `, [limit, offset], (err, rows) => {
+      if (err) {
+        console.error('Error fetching rankings:', err);
+        return res.status(500).json({ error: 'Failed to fetch rankings' });
+      }
+      
+      // Get total count for pagination info
+      dbInstance.get(`SELECT COUNT(*) as total FROM items`, [], (err, countRow) => {
+        const total = countRow ? countRow.total : rows.length;
+        
+        res.json({
+          rankings: rows,
+          limit,
+          offset,
+          total
+        });
+      });
+    });
+  }
 };
 
 /**

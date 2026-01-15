@@ -6,6 +6,7 @@ const Rankings = () => {
   const [rankings, setRankings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [limit, setLimit] = useState(100);
+  const [totalItems, setTotalItems] = useState(0);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState(null);
@@ -18,6 +19,7 @@ const Rankings = () => {
     try {
       const response = await axios.get(`/api/items/ranking?limit=${limit}`);
       setRankings(response.data.rankings || []);
+      setTotalItems(response.data.total || response.data.rankings?.length || 0);
     } catch (error) {
       console.error('Error fetching rankings:', error);
       const errorMessage = error.code === 'ERR_NETWORK'
@@ -134,15 +136,25 @@ const Rankings = () => {
           <div className="limit-controls">
             <label>Show top:</label>
             <select
-              value={limit}
-              onChange={(e) => setLimit(Number(e.target.value))}
+              value={limit >= 10000 ? 'all' : limit}
+              onChange={(e) => {
+                const newLimit = e.target.value === 'all' ? 10000 : Number(e.target.value);
+                setLimit(newLimit);
+              }}
               className="limit-select"
             >
               <option value={50}>50</option>
               <option value={100}>100</option>
               <option value={200}>200</option>
               <option value={500}>500</option>
+              <option value={1000}>1,000</option>
+              <option value="all">All ({totalItems || '...'})</option>
             </select>
+            {totalItems > 0 && limit < 10000 && (
+              <span className="total-items-info">
+                Showing {rankings.length} of {totalItems} items
+              </span>
+            )}
           </div>
         )}
 
