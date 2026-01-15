@@ -43,7 +43,7 @@ async function seedCategories() {
   // Get current count
   let currentCount = 0;
   if (dbType === 'postgres') {
-    const result = await dbInstance.query('SELECT COUNT(*) as count FROM items');
+    const result = await db.query('SELECT COUNT(*) as count FROM items');
     currentCount = parseInt(result.rows[0]?.count || 0);
   } else {
     currentCount = await new Promise((resolve) => {
@@ -148,7 +148,7 @@ async function seedCategories() {
       // Check if item already exists
       let existingItem = null;
       if (dbType === 'postgres') {
-        const result = await dbInstance.query(
+        const result = await db.query(
           `SELECT id FROM items WHERE title = $1 OR (wikipedia_id IS NOT NULL AND wikipedia_id = $2) LIMIT 1`,
           [pageInfo.title, pageInfo.wikipediaId]
         );
@@ -172,7 +172,7 @@ async function seedCategories() {
       
       // Insert into database
       if (dbType === 'postgres') {
-        const insertResult = await dbInstance.query(
+        const insertResult = await db.query(
           `INSERT INTO items (wikipedia_id, title, image_url, description)
            VALUES ($1, $2, $3, $4)
            ON CONFLICT (title) DO NOTHING`,
@@ -224,7 +224,7 @@ async function seedCategories() {
   // Get final count
   let finalCount = 0;
   if (dbType === 'postgres') {
-    const result = await dbInstance.query('SELECT COUNT(*) as count FROM items');
+    const result = await db.query('SELECT COUNT(*) as count FROM items');
     finalCount = parseInt(result.rows[0]?.count || 0);
   } else {
     finalCount = await new Promise((resolve) => {
