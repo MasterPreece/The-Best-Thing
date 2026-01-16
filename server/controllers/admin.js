@@ -1,5 +1,6 @@
 const db = require('../database');
 const seedCategoriesFunction = require('../scripts/seed-categories-wrapper');
+const { updateMissingImages } = require('../scripts/update-missing-images');
 
 /**
  * Trigger category seeding (protected by secret)
@@ -33,6 +34,40 @@ const triggerSeedCategories = async (req, res) => {
     console.error('Error in triggerSeedCategories:', error);
     res.status(500).json({ 
       error: 'Failed to trigger seeding',
+      message: error.message 
+    });
+  }
+};
+
+/**
+ * Trigger image update for items without images
+ * POST /api/admin/update-images
+ * Body: { limit?: number, includePlaceholders?: boolean }
+ */
+const triggerUpdateImages = async (req, res) => {
+  try {
+    const { limit, includePlaceholders } = req.body;
+    
+    // Run update in background (don't block the response)
+    res.json({ 
+      message: 'Image update process started.',
+      note: 'This will process items without images. Check logs to monitor progress.',
+      limit: limit || 'all',
+      skipPlaceholders: !includePlaceholders
+    });
+    
+    // Run update asynchronously
+    updateMissingImages({
+      limit: limit ? parseInt(limit) : null,
+      skipPlaceholders: !includePlaceholders
+    }).catch(err => {
+      console.error('Error during admin-triggered image update:', err);
+    });
+    
+  } catch (error) {
+    console.error('Error in triggerUpdateImages:', error);
+    res.status(500).json({ 
+      error: 'Failed to trigger image update',
       message: error.message 
     });
   }
@@ -416,6 +451,7 @@ const getAdminStats = async (req, res) => {
 
 module.exports = {
   triggerSeedCategories,
+  triggerUpdateImages,
   getAdminItems,
   createItem,
   updateItem,

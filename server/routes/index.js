@@ -75,9 +75,10 @@ router.get('/collections/check/:comparisonId', optionalAuthenticate, collections
 
 // Admin endpoints
 router.post('/admin/login', adminLogin);
-router.post('/admin/seed-categories', adminController.triggerSeedCategories);
 
 // Protected admin endpoints (require admin password)
+router.post('/admin/seed-categories', adminAuth, adminController.triggerSeedCategories);
+router.post('/admin/update-images', adminAuth, adminController.triggerUpdateImages);
 router.get('/admin/items', adminAuth, adminController.getAdminItems);
 router.post('/admin/items', adminAuth, adminController.createItem);
 router.put('/admin/items/:id', adminAuth, adminController.updateItem);
