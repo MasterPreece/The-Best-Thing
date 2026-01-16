@@ -87,6 +87,17 @@ const createTables = async () => {
     // PostgreSQL table creation
     const client = await db.connect();
     try {
+      // Categories table - must be created before items
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS categories (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(100) NOT NULL UNIQUE,
+          slug VARCHAR(100) NOT NULL UNIQUE,
+          description TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      
       // Items table
       await client.query(`
         CREATE TABLE IF NOT EXISTS items (
@@ -95,6 +106,7 @@ const createTables = async () => {
           title VARCHAR(500) NOT NULL UNIQUE,
           image_url TEXT,
           description TEXT,
+          category_id INTEGER REFERENCES categories(id),
           elo_rating DOUBLE PRECISION DEFAULT 1500,
           comparison_count INTEGER DEFAULT 0,
           wins INTEGER DEFAULT 0,
@@ -105,6 +117,10 @@ const createTables = async () => {
       
       await client.query(`
         CREATE UNIQUE INDEX IF NOT EXISTS idx_items_title ON items(title)
+      `);
+      
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_items_category_id ON items(category_id)
       `);
       
       // Users table - must be created before comparisons (which references it)
@@ -218,31 +234,49 @@ const createTables = async () => {
     // SQLite table creation - use serialize() for sequential execution
     return new Promise((resolve, reject) => {
       db.serialize(() => {
-        // Items table - must be first
-        db.run(`CREATE TABLE IF NOT EXISTS items (
+        // Categories table - must be created before items
+        db.run(`CREATE TABLE IF NOT EXISTS categories (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          wikipedia_id INTEGER UNIQUE,
-          title TEXT NOT NULL UNIQUE,
-          image_url TEXT,
+          name TEXT NOT NULL UNIQUE,
+          slug TEXT NOT NULL UNIQUE,
           description TEXT,
-          elo_rating REAL DEFAULT 1500,
-          comparison_count INTEGER DEFAULT 0,
-          wins INTEGER DEFAULT 0,
-          losses INTEGER DEFAULT 0,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )`, (err) => {
           if (err) {
-            console.error('Error creating items table:', err);
+            console.error('Error creating categories table:', err);
             return reject(err);
           }
-          console.log('✓ Created items table');
+          console.log('✓ Created categories table');
           
-          // Index for items
-          db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_items_title ON items(title)`, (err) => {
-            if (err) console.error('Error creating idx_items_title:', err);
+          // Items table - must be after categories
+          db.run(`CREATE TABLE IF NOT EXISTS items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            wikipedia_id INTEGER UNIQUE,
+            title TEXT NOT NULL UNIQUE,
+            image_url TEXT,
+            description TEXT,
+            category_id INTEGER REFERENCES categories(id),
+            elo_rating REAL DEFAULT 1500,
+            comparison_count INTEGER DEFAULT 0,
+            wins INTEGER DEFAULT 0,
+            losses INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )`, (err) => {
+            if (err) {
+              console.error('Error creating items table:', err);
+              return reject(err);
+            }
+            console.log('✓ Created items table');
             
-            // Comparisons table - depends on items
-            db.run(`CREATE TABLE IF NOT EXISTS comparisons (
+            // Indexes for items
+            db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_items_title ON items(title)`, (err) => {
+              if (err) console.error('Error creating idx_items_title:', err);
+              
+              db.run(`CREATE INDEX IF NOT EXISTS idx_items_category_id ON items(category_id)`, (err) => {
+                if (err) console.error('Error creating idx_items_category_id:', err);
+                
+                // Comparisons table - depends on items
+                db.run(`CREATE TABLE IF NOT EXISTS comparisons (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               item1_id INTEGER NOT NULL,
               item2_id INTEGER NOT NULL,
@@ -347,6 +381,8 @@ const createTables = async () => {
                   });
                 });
               });
+            });
+          });
             });
           });
         });

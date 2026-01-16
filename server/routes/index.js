@@ -8,12 +8,42 @@ const statsController = require('../controllers/stats');
 const commentsController = require('../controllers/comments');
 const collectionsController = require('../controllers/collections');
 const adminController = require('../controllers/admin');
+const bulkImportController = require('../controllers/bulk-import');
+const categoriesController = require('../controllers/categories');
+const { adminAuth, adminLogin } = require('../utils/admin-auth');
 const { authenticate, optionalAuthenticate } = require('../utils/auth');
+const multer = require('multer');
+
+// Configure multer for file uploads (memory storage for Excel/CSV files)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+                          'application/vnd.ms-excel', // .xls
+                          'text/csv', // .csv
+                          'application/vnd.ms-excel.sheet.macroEnabled.12']; // .xlsm
+    const allowedExtensions = ['.xlsx', '.xls', '.csv'];
+    const fileExtension = '.' + file.originalname.split('.').pop().toLowerCase();
+    
+    if (allowedTypes.includes(file.mimetype) || allowedExtensions.includes(fileExtension)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Please upload an Excel (.xlsx, .xls) or CSV file.'));
+    }
+  }
+});
 
 // Comparisons
 router.get('/comparison', optionalAuthenticate, comparisonsController.getRandomComparison);
 router.get('/comparison/count', comparisonsController.getSessionComparisonCount);
 router.post('/comparison/vote', optionalAuthenticate, comparisonsController.submitVote);
+
+// Categories
+router.get('/categories', categoriesController.getCategories);
+router.get('/categories/:slug', categoriesController.getCategoryBySlug);
 
 // Items/Rankings
 router.get('/items/ranking', itemsController.getRankings);
@@ -44,7 +74,25 @@ router.delete('/collections/:comparisonId', authenticate, collectionsController.
 router.get('/collections/check/:comparisonId', optionalAuthenticate, collectionsController.checkInCollection);
 
 // Admin endpoints
+router.post('/admin/login', adminLogin);
 router.post('/admin/seed-categories', adminController.triggerSeedCategories);
+
+// Protected admin endpoints (require admin password)
+router.get('/admin/items', adminAuth, adminController.getAdminItems);
+router.post('/admin/items', adminAuth, adminController.createItem);
+router.put('/admin/items/:id', adminAuth, adminController.updateItem);
+router.delete('/admin/items/:id', adminAuth, adminController.deleteItem);
+router.get('/admin/stats', adminAuth, adminController.getAdminStats);
+router.post('/admin/bulk-import', adminAuth, upload.single('file'), (err, req, res, next) => {
+  if (err) {
+    return res.status(400).json({ 
+      error: 'File upload error',
+      message: err.message || 'Invalid file'
+    });
+  }
+  next();
+}, bulkImportController.bulkImport);
+router.get('/admin/bulk-import/template', adminAuth, bulkImportController.getTemplate);
 
 // Health check
 router.get('/health', (req, res) => {

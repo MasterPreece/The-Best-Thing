@@ -12,13 +12,88 @@ const getRandomComparison = (req, res) => {
   
   // Helper function to fetch from all items (truly random)
   const fetchFromAllItems = () => {
+    const dbType = db.getDbType();
+    if (dbType === 'postgres') {
+      // Try with categories join first, fallback to simple query if categories table doesn't exist
+      db.query(`
+        SELECT i.id, i.title, i.image_url, i.description, i.elo_rating,
+               c.id as category_id, c.name as category_name, c.slug as category_slug
+        FROM items i
+        LEFT JOIN categories c ON i.category_id = c.id
+        ORDER BY RANDOM()
+        LIMIT 2
+      `).then(result => {
+        if (result.rows.length < 2) {
+          return res.status(404).json({ error: 'Not enough items in database' });
+        }
+        res.json({
+          item1: result.rows[0],
+          item2: result.rows[1]
+        });
+      }).catch(err => {
+        // If categories table doesn't exist, fallback to simple query
+        if (err.code === '42P01' || err.message.includes('does not exist')) {
+          console.log('Categories table not found, using simple query');
+          return db.query(`
+            SELECT id, title, image_url, description, elo_rating
+            FROM items
+            ORDER BY RANDOM()
+            LIMIT 2
+          `).then(result => {
+            if (result.rows.length < 2) {
+              return res.status(404).json({ error: 'Not enough items in database' });
+            }
+            res.json({
+              item1: result.rows[0],
+              item2: result.rows[1]
+            });
+          }).catch(fallbackErr => {
+            console.error('Error fetching comparison:', fallbackErr);
+            res.status(500).json({ error: 'Failed to fetch comparison' });
+          });
+        }
+        console.error('Error fetching comparison:', err);
+        res.status(500).json({ error: 'Failed to fetch comparison' });
+      });
+      return;
+    }
+    
+    // SQLite - try with categories join, fallback if needed
     dbInstance.all(`
-      SELECT id, title, image_url, description, elo_rating
-      FROM items
+      SELECT i.id, i.title, i.image_url, i.description, i.elo_rating,
+             c.id as category_id, c.name as category_name, c.slug as category_slug
+      FROM items i
+      LEFT JOIN categories c ON i.category_id = c.id
       ORDER BY RANDOM()
       LIMIT 2
     `, (err, rows) => {
       if (err) {
+        // If categories table/column doesn't exist, fallback to simple query
+        const errorStr = err.message || err.toString() || '';
+        if (errorStr.includes('no such table: categories') || 
+            errorStr.includes('no such column') || 
+            errorStr.includes('category_id') ||
+            (err.code === 'SQLITE_ERROR' && errorStr.includes('category'))) {
+          console.log('Categories not available, using simple query');
+          return dbInstance.all(`
+            SELECT id, title, image_url, description, elo_rating
+            FROM items
+            ORDER BY RANDOM()
+            LIMIT 2
+          `, (fallbackErr, fallbackRows) => {
+            if (fallbackErr) {
+              console.error('Error fetching comparison:', fallbackErr);
+              return res.status(500).json({ error: 'Failed to fetch comparison' });
+            }
+            if (fallbackRows.length < 2) {
+              return res.status(404).json({ error: 'Not enough items in database' });
+            }
+            res.json({
+              item1: fallbackRows[0],
+              item2: fallbackRows[1]
+            });
+          });
+        }
         console.error('Error fetching comparison:', err);
         return res.status(500).json({ error: 'Failed to fetch comparison' });
       }
@@ -41,14 +116,92 @@ const getRandomComparison = (req, res) => {
   
   if (useWeightedRandom) {
     // Try to get items with descriptions first, but fall back to all items if needed
+    const dbType = db.getDbType();
+    if (dbType === 'postgres') {
+      db.query(`
+        SELECT i.id, i.title, i.image_url, i.description, i.elo_rating,
+               c.id as category_id, c.name as category_name, c.slug as category_slug
+        FROM items i
+        LEFT JOIN categories c ON i.category_id = c.id
+        WHERE i.description IS NOT NULL AND i.description != ''
+        ORDER BY RANDOM()
+        LIMIT 2
+      `).then(result => {
+        if (result.rows.length >= 2) {
+          res.json({
+            item1: result.rows[0],
+            item2: result.rows[1]
+          });
+        } else {
+          fetchFromAllItems();
+        }
+      }).catch(err => {
+        // If categories table doesn't exist, try simple query
+        if (err.code === '42P01' || err.message.includes('does not exist')) {
+          console.log('Categories table not found, using simple query');
+          return db.query(`
+            SELECT id, title, image_url, description, elo_rating
+            FROM items
+            WHERE description IS NOT NULL AND description != ''
+            ORDER BY RANDOM()
+            LIMIT 2
+          `).then(result => {
+            if (result.rows.length >= 2) {
+              res.json({
+                item1: result.rows[0],
+                item2: result.rows[1]
+              });
+            } else {
+              fetchFromAllItems();
+            }
+          }).catch(fallbackErr => {
+            console.error('Error fetching comparison:', fallbackErr);
+            fetchFromAllItems();
+          });
+        }
+        console.error('Error fetching comparison:', err);
+        fetchFromAllItems();
+      });
+      return;
+    }
+    
     dbInstance.all(`
-      SELECT id, title, image_url, description, elo_rating
-      FROM items
-      WHERE description IS NOT NULL AND description != ''
+      SELECT i.id, i.title, i.image_url, i.description, i.elo_rating,
+             c.id as category_id, c.name as category_name, c.slug as category_slug
+      FROM items i
+      LEFT JOIN categories c ON i.category_id = c.id
+      WHERE i.description IS NOT NULL AND i.description != ''
       ORDER BY RANDOM()
       LIMIT 2
     `, (err, rows) => {
       if (err) {
+        // If categories table/column doesn't exist, fallback to simple query
+        const errorStr = err.message || err.toString() || '';
+        if (errorStr.includes('no such table: categories') || 
+            errorStr.includes('no such column') || 
+            errorStr.includes('category_id') ||
+            (err.code === 'SQLITE_ERROR' && errorStr.includes('category'))) {
+          console.log('Categories not available, using simple query');
+          return dbInstance.all(`
+            SELECT id, title, image_url, description, elo_rating
+            FROM items
+            WHERE description IS NOT NULL AND description != ''
+            ORDER BY RANDOM()
+            LIMIT 2
+          `, (fallbackErr, fallbackRows) => {
+            if (fallbackErr) {
+              console.error('Error fetching comparison:', fallbackErr);
+              return res.status(500).json({ error: 'Failed to fetch comparison' });
+            }
+            if (fallbackRows.length >= 2) {
+              return res.json({
+                item1: fallbackRows[0],
+                item2: fallbackRows[1]
+              });
+            }
+            fetchFromAllItems();
+          });
+        }
         console.error('Error fetching comparison:', err);
         return res.status(500).json({ error: 'Failed to fetch comparison' });
       }

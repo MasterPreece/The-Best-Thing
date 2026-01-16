@@ -1,3 +1,6 @@
+// Load environment variables from .env file (if it exists)
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -54,8 +57,16 @@ if (fs.existsSync(buildIndexPath)) {
 db.init().then(() => {
   // Run migrations
   return runMigrations();
-}).then(() => {
+}).then(async () => {
   console.log('Database initialized successfully');
+  
+  // Seed default categories if they don't exist
+  try {
+    const seedCategories = require('./scripts/seed-categories-default');
+    await seedCategories();
+  } catch (err) {
+    console.error('Error seeding categories (non-fatal):', err);
+  }
   
   // Auto-seed if database is empty (runs in background, doesn't block server start)
   autoSeedIfEmpty().then(() => {

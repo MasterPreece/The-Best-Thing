@@ -13,13 +13,29 @@ const Rankings = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [categories, setCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState('');
+
+  const fetchCategories = useCallback(async () => {
+    try {
+      const response = await axios.get('/api/categories');
+      setCategories(response.data.categories || []);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCategories();
+  }, [fetchCategories]);
 
   const fetchRankings = useCallback(async () => {
     setLoading(true);
     setError(null);
     setSearchResults(null);
     try {
-      const response = await axios.get(`/api/items/ranking?limit=${limit}`);
+      const categoryParam = selectedCategory ? `&category_id=${selectedCategory}` : '';
+      const response = await axios.get(`/api/items/ranking?limit=${limit}${categoryParam}`);
       setRankings(response.data.rankings || []);
       setTotalItems(response.data.total || response.data.rankings?.length || 0);
     } catch (error) {
@@ -31,7 +47,7 @@ const Rankings = () => {
     } finally {
       setLoading(false);
     }
-  }, [limit]);
+  }, [limit, selectedCategory]);
 
   const performSearch = useCallback(async (query) => {
     if (!query || query.trim().length === 0) {
@@ -128,29 +144,46 @@ const Rankings = () => {
         </div>
 
         {!searchQuery && (
-          <div className="limit-controls">
-            <label>Show top:</label>
-            <select
-              value={limit >= 10000 ? 'all' : limit}
-              onChange={(e) => {
-                const newLimit = e.target.value === 'all' ? 10000 : Number(e.target.value);
-                setLimit(newLimit);
-              }}
-              className="limit-select"
-            >
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-              <option value={200}>200</option>
-              <option value={500}>500</option>
-              <option value={1000}>1,000</option>
-              <option value="all">All ({totalItems || '...'})</option>
-            </select>
-            {totalItems > 0 && limit < 10000 && (
-              <span className="total-items-info">
-                Showing {rankings.length} of {totalItems} items
-              </span>
-            )}
-          </div>
+          <>
+            <div className="category-filter">
+              <label>Filter by category:</label>
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="category-select"
+              >
+                <option value="">All Categories</option>
+                {categories.map(cat => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name} ({cat.item_count || 0})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="limit-controls">
+              <label>Show top:</label>
+              <select
+                value={limit >= 10000 ? 'all' : limit}
+                onChange={(e) => {
+                  const newLimit = e.target.value === 'all' ? 10000 : Number(e.target.value);
+                  setLimit(newLimit);
+                }}
+                className="limit-select"
+              >
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={200}>200</option>
+                <option value={500}>500</option>
+                <option value={1000}>1,000</option>
+                <option value="all">All ({totalItems || '...'})</option>
+              </select>
+              {totalItems > 0 && limit < 10000 && (
+                <span className="total-items-info">
+                  Showing {rankings.length} of {totalItems} items
+                </span>
+              )}
+            </div>
+          </>
         )}
 
         {searchQuery && searchResults !== null && (
@@ -209,7 +242,12 @@ const Rankings = () => {
                   )}
                 </div>
                 <div className="rank-info">
-                  <h3 className="rank-title">{item.title}</h3>
+                  <div className="rank-title-row">
+                    <h3 className="rank-title">{item.title}</h3>
+                    {item.category_name && (
+                      <span className="category-badge">{item.category_name}</span>
+                    )}
+                  </div>
                   {item.description && (
                     <p className="rank-description">
                       {item.description.substring(0, 150)}

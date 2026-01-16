@@ -43,11 +43,57 @@
   text-decoration: none;
   color: #333;
   font-weight: 500;
-  transition: color 0.3s;
+  transition: all 0.3s;
   padding: 0.5rem;
   display: flex;
   align-items: center;
   min-height: 44px;
+  border-radius: 8px;
+  position: relative;
+}
+
+.nav-link-primary {
+  padding: 0.75rem 1.25rem;
+  background: rgba(102, 126, 234, 0.08);
+  border: 2px solid transparent;
+  border-radius: 12px;
+  font-weight: 600;
+  gap: 0.5rem;
+  transition: all 0.3s ease;
+  min-height: 48px;
+}
+
+.nav-link-primary:hover {
+  background: rgba(102, 126, 234, 0.15);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+  color: #667eea;
+}
+
+.nav-link-primary.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-color: #667eea;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.nav-link-primary.active:hover {
+  background: linear-gradient(135deg, #5568d3 0%, #6a3d92 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+  color: white;
+}
+
+.nav-link-icon {
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.nav-link-text {
+  font-size: 0.95rem;
+  white-space: nowrap;
 }
 
 .nav-link:hover {
@@ -172,6 +218,19 @@
     padding: 0.4rem 0.6rem;
   }
 
+  .nav-link-primary {
+    padding: 0.6rem 1rem;
+    min-height: 44px;
+  }
+
+  .nav-link-icon {
+    font-size: 1rem;
+  }
+
+  .nav-link-text {
+    font-size: 0.85rem;
+  }
+
   .nav-user {
     font-size: 0.85rem;
     max-width: 120px;
@@ -209,7 +268,22 @@
   .nav-links {
     width: 100%;
     flex-wrap: wrap;
-    justify-content: space-around;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .nav-link-primary {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    min-height: 40px;
+  }
+
+  .nav-link-icon {
+    font-size: 0.9rem;
+  }
+
+  .nav-link-text {
+    font-size: 0.8rem;
   }
 
   .nav-logo {

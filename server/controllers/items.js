@@ -3,8 +3,9 @@ const db = require('../database');
 const getRankings = (req, res) => {
   let limit = parseInt(req.query.limit) || 100;
   const offset = parseInt(req.query.offset) || 0;
+  const categoryId = req.query.category_id ? parseInt(req.query.category_id) : null;
   
-  console.log(`[Rankings] Requested limit: ${req.query.limit}, parsed limit: ${limit}, offset: ${offset}`);
+  console.log(`[Rankings] Requested limit: ${req.query.limit}, parsed limit: ${limit}, offset: ${offset}, category: ${categoryId}`);
   
   // Cap at 10,000 to prevent performance issues, but allow "all" to work
   if (limit > 10000) {
@@ -12,15 +13,113 @@ const getRankings = (req, res) => {
   }
   
   const dbInstance = db.getDb();
+  const dbType = db.getDbType();
+  
+  // Build WHERE clause for category filter
+  const categoryFilter = categoryId ? (dbType === 'postgres' ? 'WHERE i.category_id = $1' : 'WHERE i.category_id = ?') : '';
+  const categoryParams = categoryId ? [categoryId] : [];
   
   // If limit is very large, just get all items (no LIMIT clause)
   if (limit >= 10000) {
-    dbInstance.all(`
-      SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses
-      FROM items
-      ORDER BY elo_rating DESC
-    `, [], (err, rows) => {
+    if (dbType === 'postgres') {
+      const sql = categoryId
+        ? `SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count, i.wins, i.losses,
+                  c.id as category_id, c.name as category_name, c.slug as category_slug
+           FROM items i
+           LEFT JOIN categories c ON i.category_id = c.id
+           WHERE i.category_id = $1
+           ORDER BY i.elo_rating DESC`
+        : `SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count, i.wins, i.losses,
+                  c.id as category_id, c.name as category_name, c.slug as category_slug
+           FROM items i
+           LEFT JOIN categories c ON i.category_id = c.id
+           ORDER BY i.elo_rating DESC`;
+      
+      db.query(sql, categoryParams).then(result => {
+        res.json({
+          rankings: result.rows,
+          limit: result.rows.length,
+          offset: 0,
+          total: result.rows.length
+        });
+      }).catch(err => {
+        // If categories column doesn't exist, fallback to simple query
+        const errorStr = err.message || err.toString() || '';
+        if (errorStr.includes('no such column') || errorStr.includes('category_id') ||
+            (err.code === '42P01' && errorStr.includes('category'))) {
+          console.log('Categories not available for rankings, using simple query');
+          const simpleSql = categoryId 
+            ? `SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses
+               FROM items
+               WHERE category_id = $1
+               ORDER BY elo_rating DESC`
+            : `SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses
+               FROM items
+               ORDER BY elo_rating DESC`;
+          const simpleParams = categoryId ? [categoryId] : [];
+          
+          return db.query(simpleSql, simpleParams).then(result => {
+            res.json({
+              rankings: result.rows,
+              limit: result.rows.length,
+              offset: 0,
+              total: result.rows.length
+            });
+          }).catch(fallbackErr => {
+            console.error('Error fetching rankings:', fallbackErr);
+            res.status(500).json({ error: 'Failed to fetch rankings' });
+          });
+        }
+        console.error('Error fetching rankings:', err);
+        res.status(500).json({ error: 'Failed to fetch rankings' });
+      });
+      return;
+    }
+    
+    const sql = categoryId
+      ? `SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count, i.wins, i.losses,
+                c.id as category_id, c.name as category_name, c.slug as category_slug
+         FROM items i
+         LEFT JOIN categories c ON i.category_id = c.id
+         WHERE i.category_id = ?
+         ORDER BY i.elo_rating DESC`
+      : `SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count, i.wins, i.losses,
+                c.id as category_id, c.name as category_name, c.slug as category_slug
+         FROM items i
+         LEFT JOIN categories c ON i.category_id = c.id
+         ORDER BY i.elo_rating DESC`;
+    
+    dbInstance.all(sql, categoryParams, (err, rows) => {
       if (err) {
+        // If categories column doesn't exist, fallback to simple query
+        const errorStr = err.message || err.toString() || '';
+        if (errorStr.includes('no such column') || errorStr.includes('category_id') ||
+            (err.code === 'SQLITE_ERROR' && errorStr.includes('category'))) {
+          console.log('Categories not available for rankings, using simple query');
+          const simpleSql = categoryId 
+            ? `SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses
+               FROM items
+               WHERE category_id = ?
+               ORDER BY elo_rating DESC`
+            : `SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses
+               FROM items
+               ORDER BY elo_rating DESC`;
+          const simpleParams = categoryId ? [categoryId] : [];
+          
+          return dbInstance.all(simpleSql, simpleParams, (fallbackErr, fallbackRows) => {
+            if (fallbackErr) {
+              console.error('Error fetching rankings:', fallbackErr);
+              return res.status(500).json({ error: 'Failed to fetch rankings' });
+            }
+            
+            res.json({
+              rankings: fallbackRows,
+              limit: fallbackRows.length,
+              offset: 0,
+              total: fallbackRows.length
+            });
+          });
+        }
         console.error('Error fetching rankings:', err);
         return res.status(500).json({ error: 'Failed to fetch rankings' });
       }
@@ -35,13 +134,106 @@ const getRankings = (req, res) => {
       });
     });
   } else {
-    dbInstance.all(`
-      SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses
-      FROM items
-      ORDER BY elo_rating DESC
-      LIMIT ? OFFSET ?
-    `, [limit, offset], (err, rows) => {
+    if (dbType === 'postgres') {
+      const sql = categoryId
+        ? `SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count, i.wins, i.losses,
+                  c.id as category_id, c.name as category_name, c.slug as category_slug
+           FROM items i
+           LEFT JOIN categories c ON i.category_id = c.id
+           WHERE i.category_id = $1
+           ORDER BY i.elo_rating DESC
+           LIMIT $2 OFFSET $3`
+        : `SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count, i.wins, i.losses,
+                  c.id as category_id, c.name as category_name, c.slug as category_slug
+           FROM items i
+           LEFT JOIN categories c ON i.category_id = c.id
+           ORDER BY i.elo_rating DESC
+           LIMIT $1 OFFSET $2`;
+      
+      const params = categoryId ? [categoryId, limit, offset] : [limit, offset];
+      
+      db.query(sql, params).then(result => {
+        // Get total count
+        const countSql = categoryId 
+          ? `SELECT COUNT(*) as total FROM items WHERE category_id = $1`
+          : `SELECT COUNT(*) as total FROM items`;
+        const countParams = categoryId ? [categoryId] : [];
+        
+        return db.query(countSql, countParams).then(countResult => {
+          const total = parseInt(countResult.rows[0]?.total || 0);
+          console.log(`[Rankings] Fetched ${result.rows.length} items with limit ${limit}, total: ${total}`);
+          res.json({
+            rankings: result.rows,
+            limit,
+            offset,
+            total
+          });
+        });
+      }).catch(err => {
+        console.error('Error fetching rankings:', err);
+        res.status(500).json({ error: 'Failed to fetch rankings' });
+      });
+      return;
+    }
+    
+    const sql = categoryId
+      ? `SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count, i.wins, i.losses,
+                c.id as category_id, c.name as category_name, c.slug as category_slug
+         FROM items i
+         LEFT JOIN categories c ON i.category_id = c.id
+         WHERE i.category_id = ?
+         ORDER BY i.elo_rating DESC
+         LIMIT ? OFFSET ?`
+      : `SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count, i.wins, i.losses,
+                c.id as category_id, c.name as category_name, c.slug as category_slug
+         FROM items i
+         LEFT JOIN categories c ON i.category_id = c.id
+         ORDER BY i.elo_rating DESC
+         LIMIT ? OFFSET ?`;
+    const params = categoryId ? [categoryId, limit, offset] : [limit, offset];
+    
+    dbInstance.all(sql, params, (err, rows) => {
       if (err) {
+        // If categories column doesn't exist, fallback to simple query
+        const errorStr = err.message || err.toString() || '';
+        if (errorStr.includes('no such column') || errorStr.includes('category_id') ||
+            (err.code === 'SQLITE_ERROR' && errorStr.includes('category'))) {
+          console.log('Categories not available for rankings, using simple query');
+          const simpleSql = categoryId 
+            ? `SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses
+               FROM items
+               WHERE category_id = ?
+               ORDER BY elo_rating DESC
+               LIMIT ? OFFSET ?`
+            : `SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses
+               FROM items
+               ORDER BY elo_rating DESC
+               LIMIT ? OFFSET ?`;
+          const simpleParams = categoryId ? [categoryId, limit, offset] : [limit, offset];
+          
+          return dbInstance.all(simpleSql, simpleParams, (fallbackErr, fallbackRows) => {
+            if (fallbackErr) {
+              console.error('Error fetching rankings:', fallbackErr);
+              return res.status(500).json({ error: 'Failed to fetch rankings' });
+            }
+            
+            const countSql = categoryId 
+              ? `SELECT COUNT(*) as total FROM items WHERE category_id = ?`
+              : `SELECT COUNT(*) as total FROM items`;
+            const countParams = categoryId ? [categoryId] : [];
+            
+            dbInstance.get(countSql, countParams, (countErr, countRow) => {
+              const total = countRow ? countRow.total : fallbackRows.length;
+              
+              res.json({
+                rankings: fallbackRows,
+                limit,
+                offset,
+                total
+              });
+            });
+          });
+        }
         console.error('Error fetching rankings:', err);
         return res.status(500).json({ error: 'Failed to fetch rankings' });
       }
@@ -49,7 +241,12 @@ const getRankings = (req, res) => {
       console.log(`[Rankings] Fetched ${rows.length} items with limit ${limit}`);
       
       // Get total count for pagination info
-      dbInstance.get(`SELECT COUNT(*) as total FROM items`, [], (err, countRow) => {
+      const countSql = categoryId 
+        ? `SELECT COUNT(*) as total FROM items WHERE category_id = ?`
+        : `SELECT COUNT(*) as total FROM items`;
+      const countParams = categoryId ? [categoryId] : [];
+      
+      dbInstance.get(countSql, countParams, (err, countRow) => {
         const total = countRow ? countRow.total : rows.length;
         
         console.log(`[Rankings] Total items in database: ${total}`);

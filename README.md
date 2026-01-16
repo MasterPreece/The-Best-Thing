@@ -8,6 +8,7 @@ A fun meme website where users compare two things and vote for the better one. B
 - 📊 **Rankings**: Items are ranked using an Elo rating system based on user votes
 - 🏅 **Leaderboards**: See who has made the most comparisons
 - 🖼️ **Smart Image Fallback**: Uses Wikipedia images first, falls back to Unsplash, then placeholder images
+- 🔧 **Admin Dashboard**: Manage items, view statistics, and refine the database (password-protected)
 
 ## Getting Started
 
@@ -34,6 +35,29 @@ The app will work without an Unsplash API key, but adding one improves image cov
    ```
 
 **Note**: Without an API key, the app will still work but will use placeholder images for items without Wikipedia images.
+
+### Admin Dashboard Setup
+
+The admin dashboard allows you to manage items in the database. Set an admin password:
+
+```bash
+# In your .env file (local development)
+ADMIN_PASSWORD=your-secure-password-here
+
+# Or in Railway (production)
+# Add ADMIN_PASSWORD to your environment variables
+```
+
+**Important**: Change the default password in production! The default is `admin-change-me-in-production`.
+
+To access the admin dashboard:
+1. Visit `/admin` in your browser
+2. Enter your admin password
+3. You'll see a dashboard with:
+   - Database statistics (total items, comparisons, users, etc.)
+   - Full item list with search and pagination
+   - Add, edit, and delete items
+   - Image previews and item details
 
 ### Installation
 
@@ -75,11 +99,21 @@ the-best-thing/
 
 ## API Endpoints
 
+### Public Endpoints
 - `GET /api/comparison` - Get two random items to compare
 - `POST /api/comparison/vote` - Submit a vote for which item is better
 - `GET /api/items/ranking` - Get the ranking list of all items
 - `GET /api/items/:id` - Get details for a specific item
 - `GET /api/leaderboard` - Get the leaderboard of top users
+- `GET /api/stats` - Get global statistics
+
+### Admin Endpoints (require admin password)
+- `POST /api/admin/login` - Login with admin password
+- `GET /api/admin/items` - Get all items (paginated, searchable)
+- `POST /api/admin/items` - Create a new item
+- `PUT /api/admin/items/:id` - Update an item
+- `DELETE /api/admin/items/:id` - Delete an item
+- `GET /api/admin/stats` - Get detailed database statistics
 
 ## How It Works
 
