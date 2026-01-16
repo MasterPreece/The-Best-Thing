@@ -7,7 +7,7 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(50);
+  const limit = 50; // Fixed limit per page
   const [search, setSearch] = useState('');
   const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
   const [showAddModal, setShowAddModal] = useState(false);
@@ -49,7 +49,7 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
     } finally {
       setLoading(false);
     }
-  }, [page, limit, search, adminToken, api, onLogout]);
+  }, [page, limit, search, api, onLogout]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -63,7 +63,7 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
         console.error('Stats error:', err.response?.data || err);
       }
     }
-  }, [adminToken, api, onLogout]);
+  }, [api, onLogout]);
 
   useEffect(() => {
     fetchItems();
