@@ -109,7 +109,130 @@ const getRandomComparison = (req, res) => {
     });
   };
   
-  // Get two random items with better distribution
+  // Get two random items with smart prioritization
+  // 40% chance: items needing more comparisons (low comparison_count)
+  // 40% chance: items with recent activity (hot/trending)
+  // 20% chance: completely random (variety)
+  const selectionType = Math.random();
+  const usePrioritySelection = selectionType < 0.8;
+  
+  // Helper to fetch items needing more comparisons
+  const fetchItemsNeedingVotes = () => {
+    const dbType = db.getDbType();
+    if (dbType === 'postgres') {
+      // Get items with fewer comparisons, weighted by their current rating
+      // This prioritizes promising items that need more data
+      return db.query(`
+        SELECT i.id, i.title, i.image_url, i.description, i.elo_rating,
+               c.id as category_id, c.name as category_name, c.slug as category_slug
+        FROM items i
+        LEFT JOIN categories c ON i.category_id = c.id
+        WHERE i.comparison_count < (SELECT AVG(comparison_count) * 1.5 FROM items)
+        ORDER BY (1.0 / (i.comparison_count + 1)) * LOG(i.elo_rating + 1) DESC, RANDOM()
+        LIMIT 20
+      `).then(result => {
+        if (result.rows.length >= 2) {
+          // Randomly pick 2 from the top candidates
+          const shuffled = result.rows.sort(() => 0.5 - Math.random());
+          return res.json({
+            item1: shuffled[0],
+            item2: shuffled[1]
+          });
+        }
+        return fetchFromAllItems();
+      }).catch(() => fetchFromAllItems());
+    }
+    
+    // SQLite version
+    dbInstance.all(`
+      SELECT i.id, i.title, i.image_url, i.description, i.elo_rating,
+             c.id as category_id, c.name as category_name, c.slug as category_slug
+      FROM items i
+      LEFT JOIN categories c ON i.category_id = c.id
+      WHERE i.comparison_count < (SELECT AVG(comparison_count) * 1.5 FROM items)
+      ORDER BY (1.0 / (i.comparison_count + 1)) * LOG(i.elo_rating + 1) DESC, RANDOM()
+      LIMIT 20
+    `, (err, rows) => {
+      if (err || !rows || rows.length < 2) {
+        return fetchFromAllItems();
+      }
+      const shuffled = rows.sort(() => 0.5 - Math.random());
+      res.json({
+        item1: shuffled[0],
+        item2: shuffled[1]
+      });
+    });
+  };
+  
+  // Helper to fetch hot/trending items (recently compared)
+  const fetchHotItems = () => {
+    const dbType = db.getDbType();
+    if (dbType === 'postgres') {
+      // Get items that were compared recently (last 24 hours)
+      return db.query(`
+        SELECT DISTINCT i.id, i.title, i.image_url, i.description, i.elo_rating,
+               c.id as category_id, c.name as category_name, c.slug as category_slug,
+               COUNT(cmp.id) as recent_comparisons
+        FROM items i
+        LEFT JOIN categories c ON i.category_id = c.id
+        LEFT JOIN comparisons cmp ON (cmp.item1_id = i.id OR cmp.item2_id = i.id)
+          AND cmp.created_at >= NOW() - INTERVAL '24 hours'
+        GROUP BY i.id, c.id
+        HAVING COUNT(cmp.id) > 0
+        ORDER BY recent_comparisons DESC, RANDOM()
+        LIMIT 20
+      `).then(result => {
+        if (result.rows.length >= 2) {
+          const shuffled = result.rows.sort(() => 0.5 - Math.random());
+          return res.json({
+            item1: shuffled[0],
+            item2: shuffled[1]
+          });
+        }
+        // Fallback to items needing votes if no recent activity
+        return fetchItemsNeedingVotes();
+      }).catch(() => fetchItemsNeedingVotes());
+    }
+    
+    // SQLite version
+    dbInstance.all(`
+      SELECT DISTINCT i.id, i.title, i.image_url, i.description, i.elo_rating,
+             c.id as category_id, c.name as category_name, c.slug as category_slug,
+             COUNT(cmp.id) as recent_comparisons
+      FROM items i
+      LEFT JOIN categories c ON i.category_id = c.id
+      LEFT JOIN comparisons cmp ON (cmp.item1_id = i.id OR cmp.item2_id = i.id)
+        AND datetime(cmp.created_at) >= datetime('now', '-24 hours')
+      GROUP BY i.id, c.id
+      HAVING COUNT(cmp.id) > 0
+      ORDER BY recent_comparisons DESC, RANDOM()
+      LIMIT 20
+    `, (err, rows) => {
+      if (err || !rows || rows.length < 2) {
+        return fetchItemsNeedingVotes();
+      }
+      const shuffled = rows.sort(() => 0.5 - Math.random());
+      res.json({
+        item1: shuffled[0],
+        item2: shuffled[1]
+      });
+    });
+  };
+  
+  // Priority selection logic (80% of the time)
+  if (usePrioritySelection) {
+    if (selectionType < 0.4) {
+      // 40% chance: items needing more votes
+      fetchItemsNeedingVotes();
+      return;
+    } else {
+      // 40% chance: hot/trending items
+      fetchHotItems();
+      return;
+    }
+  }
+  
+  // Fall back to existing weighted random logic (20% of the time, or if priority fails)
   // Use a weighted random approach: 50% chance from items with descriptions, 50% from all items
   // This ensures much better variety while still sometimes preferring items with descriptions
   const useWeightedRandom = Math.random() < 0.5;

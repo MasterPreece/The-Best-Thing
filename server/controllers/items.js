@@ -550,8 +550,86 @@ const getItemById = async (req, res) => {
   }
 };
 
+/**
+ * Get trending/hot items (rising in rankings)
+ * Items with recent activity or rising ratings
+ */
+const getTrendingItems = (req, res) => {
+  const limit = parseInt(req.query.limit) || 10;
+  const dbInstance = db.getDb();
+  const dbType = db.getDbType();
+  
+  if (dbType === 'postgres') {
+    // Get items with recent comparisons, ordered by activity
+    db.query(`
+      SELECT DISTINCT i.id, i.title, i.image_url, i.description, i.elo_rating, 
+             i.comparison_count, i.wins, i.losses,
+             c.id as category_id, c.name as category_name, c.slug as category_slug,
+             COUNT(cmp.id) as recent_comparisons
+      FROM items i
+      LEFT JOIN categories c ON i.category_id = c.id
+      LEFT JOIN comparisons cmp ON (cmp.item1_id = i.id OR cmp.item2_id = i.id)
+        AND cmp.created_at >= NOW() - INTERVAL '24 hours'
+      GROUP BY i.id, c.id
+      HAVING COUNT(cmp.id) > 0
+      ORDER BY recent_comparisons DESC, i.elo_rating DESC
+      LIMIT $1
+    `, [limit]).then(result => {
+      // Calculate ranks for each item
+      const itemsWithRanks = result.rows.map((item, index) => ({
+        ...item,
+        rank: index + 1,
+        trend: 'hot' // Hot items are trending
+      }));
+      
+      res.json({
+        trending: itemsWithRanks,
+        count: itemsWithRanks.length
+      });
+    }).catch(err => {
+      console.error('Error fetching trending items:', err);
+      res.status(500).json({ error: 'Failed to fetch trending items' });
+    });
+    return;
+  }
+  
+  // SQLite version
+  dbInstance.all(`
+    SELECT DISTINCT i.id, i.title, i.image_url, i.description, i.elo_rating,
+           i.comparison_count, i.wins, i.losses,
+           c.id as category_id, c.name as category_name, c.slug as category_slug,
+           COUNT(cmp.id) as recent_comparisons
+    FROM items i
+    LEFT JOIN categories c ON i.category_id = c.id
+    LEFT JOIN comparisons cmp ON (cmp.item1_id = i.id OR cmp.item2_id = i.id)
+      AND datetime(cmp.created_at) >= datetime('now', '-24 hours')
+    GROUP BY i.id, c.id
+    HAVING COUNT(cmp.id) > 0
+    ORDER BY recent_comparisons DESC, i.elo_rating DESC
+    LIMIT ?
+  `, [limit], (err, rows) => {
+    if (err) {
+      console.error('Error fetching trending items:', err);
+      return res.status(500).json({ error: 'Failed to fetch trending items' });
+    }
+    
+    // Calculate ranks for each item
+    const itemsWithRanks = (rows || []).map((item, index) => ({
+      ...item,
+      rank: index + 1,
+      trend: 'hot'
+    }));
+    
+    res.json({
+      trending: itemsWithRanks,
+      count: itemsWithRanks.length
+    });
+  });
+};
+
 module.exports = {
   getRankings,
   searchItem,
-  getItemById
+  getItemById,
+  getTrendingItems
 };

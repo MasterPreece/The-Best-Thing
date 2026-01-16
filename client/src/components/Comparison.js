@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import Toast from './Toast';
 import AccountPrompt from './AccountPrompt';
+import TrendingItems from './TrendingItems';
 import { ComparisonSkeleton } from './SkeletonLoader';
 import { animateNumber } from '../utils/numberAnimation';
 import './Comparison.css';
@@ -521,6 +522,8 @@ const Comparison = ({ userSessionId }) => {
           </div>
         )}
       </div>
+
+      <TrendingItems />
     </div>
   );
 };
