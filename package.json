@@ -13,8 +13,9 @@
     "seed:large": "node server/scripts/seed-wikipedia.js 500",
     "seed:popular": "node server/scripts/seed-popular.js",
     "seed:categories": "node server/scripts/seed-categories.js",
-    "update-images": "node server/scripts/update-missing-images.js",
-    "seed:default-categories": "node server/scripts/seed-categories-default.js"
+    "seed:top2000": "node server/scripts/seed-top-2000.js",
+    "seed:default-categories": "node server/scripts/seed-categories-default.js",
+    "update-images": "node server/scripts/update-missing-images.js"
   },
   "keywords": [
     "meme",
