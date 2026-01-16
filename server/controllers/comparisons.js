@@ -191,10 +191,18 @@ const submitVote = (req, res) => {
                     comparisons_count = comparisons_count + 1,
                     last_active = CURRENT_TIMESTAMP
                 `, [userSessionId], function(err) {
+                  if (err) {
+                    console.error('Error updating user session:', err);
+                    // Continue anyway - don't fail the vote if session update fails
+                  }
+                  
                   // Get updated count to determine if we should prompt
                   dbInstance.get(`
                     SELECT comparisons_count FROM user_sessions WHERE session_id = ?
                   `, [userSessionId], (err, row) => {
+                    if (err) {
+                      console.error('Error getting user session count:', err);
+                    }
                     const comparisonCount = row ? row.comparisons_count : 0;
                     const shouldPromptAccount = comparisonCount >= 10;
                     

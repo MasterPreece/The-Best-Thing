@@ -19,17 +19,19 @@ const getLeaderboard = (req, res) => {
     `, [], (err, rows) => {
       if (err) {
         console.error('Error fetching leaderboard:', err);
-        return res.status(500).json({ error: 'Failed to fetch leaderboard' });
+        return res.status(500).json({ error: 'Failed to fetch leaderboard', details: err.message });
       }
       
+      console.log(`[Leaderboard] Fetched ${rows ? rows.length : 0} user sessions (all)`);
+      
       res.json({
-        leaderboard: rows.map((row, index) => ({
+        leaderboard: (rows || []).map((row, index) => ({
           rank: index + 1,
           sessionId: row.session_id,
-          comparisonsCount: row.comparisons_count,
+          comparisonsCount: row.comparisons_count || 0,
           lastActive: row.last_active
         })),
-        total: rows.length
+        total: rows ? rows.length : 0
       });
     });
   } else {
@@ -41,18 +43,25 @@ const getLeaderboard = (req, res) => {
     `, [limit], (err, rows) => {
       if (err) {
         console.error('Error fetching leaderboard:', err);
-        return res.status(500).json({ error: 'Failed to fetch leaderboard' });
+        return res.status(500).json({ error: 'Failed to fetch leaderboard', details: err.message });
       }
+      
+      console.log(`[Leaderboard] Fetched ${rows ? rows.length : 0} user sessions with limit ${limit}`);
       
       // Get total count for info
       dbInstance.get(`SELECT COUNT(*) as total FROM user_sessions`, [], (err, countRow) => {
-        const total = countRow ? countRow.total : rows.length;
+        if (err) {
+          console.error('Error getting total count:', err);
+        }
+        const total = countRow ? countRow.total : (rows ? rows.length : 0);
+        
+        console.log(`[Leaderboard] Total user sessions in database: ${total}`);
         
         res.json({
-          leaderboard: rows.map((row, index) => ({
+          leaderboard: (rows || []).map((row, index) => ({
             rank: index + 1,
             sessionId: row.session_id,
-            comparisonsCount: row.comparisons_count,
+            comparisonsCount: row.comparisons_count || 0,
             lastActive: row.last_active
           })),
           total
