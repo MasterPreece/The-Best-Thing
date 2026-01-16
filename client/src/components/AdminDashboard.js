@@ -12,6 +12,7 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
   const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
+  const [showUpdateImagesModal, setShowUpdateImagesModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [error, setError] = useState('');
 
@@ -142,6 +143,9 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
           <button className="bulk-import-button" onClick={() => setShowBulkImportModal(true)}>
             📊 Bulk Import
           </button>
+          <button className="update-images-button" onClick={() => setShowUpdateImagesModal(true)}>
+            🖼️ Update Images
+          </button>
         </div>
       </div>
 
@@ -269,6 +273,20 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
             setShowBulkImportModal(false);
             fetchItems();
             fetchStats();
+          }}
+          api={api}
+        />
+      )}
+
+      {showUpdateImagesModal && (
+        <UpdateImagesModal
+          onClose={() => setShowUpdateImagesModal(false)}
+          onSuccess={() => {
+            setShowUpdateImagesModal(false);
+            // Refresh stats after a delay to see updated image counts
+            setTimeout(() => {
+              fetchStats();
+            }, 5000);
           }}
           api={api}
         />
@@ -495,6 +513,156 @@ const BulkImportModal = ({ onClose, onSuccess, api }) => {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+};
+
+// Update Images Modal
+const UpdateImagesModal = ({ onClose, onSuccess, api }) => {
+  const [limit, setLimit] = useState('');
+  const [includePlaceholders, setIncludePlaceholders] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess(false);
+    setLoading(true);
+
+    try {
+      const body = {};
+      if (limit && limit.trim()) {
+        const parsedLimit = parseInt(limit);
+        if (isNaN(parsedLimit) || parsedLimit <= 0) {
+          setError('Limit must be a positive number');
+          setLoading(false);
+          return;
+        }
+        body.limit = parsedLimit;
+      }
+      if (includePlaceholders) {
+        body.includePlaceholders = true;
+      }
+
+      await api.post('/api/admin/update-images', body);
+
+      setSuccess(true);
+      
+      // Close after a delay
+      setTimeout(() => {
+        onSuccess();
+      }, 3000);
+    } catch (err) {
+      console.error('Update images error:', err);
+      setError(err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to start image update');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (success) {
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-header">
+            <h2>🖼️ Update Images</h2>
+            <button className="close-button" onClick={onClose}>×</button>
+          </div>
+          
+          <div className="update-images-success">
+            <div className="success-icon">✅</div>
+            <h3>Image Update Started!</h3>
+            <p>The image update process has been started in the background.</p>
+            <p className="info-text">
+              📋 <strong>What happens next:</strong>
+            </p>
+            <ul className="info-list">
+              <li>The system will find items without images</li>
+              <li>It will attempt to fetch images from Wikipedia</li>
+              <li>If Unsplash is configured, it will try that as well</li>
+              <li>Progress is logged in the server console/logs</li>
+            </ul>
+            <p className="info-text">
+              💡 <strong>Tip:</strong> Check the stats section after a few minutes to see updated image counts. The process respects API rate limits and may take some time.
+            </p>
+            
+            <div className="modal-actions">
+              <button onClick={onClose} className="save-button">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>🖼️ Update Images</h2>
+          <button className="close-button" onClick={onClose}>×</button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="update-images-info">
+            <p>This will search for items without images and attempt to fetch images from Wikipedia and Unsplash.</p>
+            
+            <div className="info-box">
+              <p><strong>How it works:</strong></p>
+              <ul>
+                <li>Finds items with missing or placeholder images</li>
+                <li>Tries to fetch images from Wikipedia first</li>
+                <li>Falls back to Unsplash (if configured)</li>
+                <li>Only updates items that get real images (unless "Include Placeholders" is checked)</li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label>
+              Limit (Optional)
+              <span className="field-hint"> - Leave empty to process all items</span>
+            </label>
+            <input
+              type="number"
+              value={limit}
+              onChange={(e) => setLimit(e.target.value)}
+              placeholder="e.g., 100"
+              min="1"
+              disabled={loading}
+            />
+            <small className="field-hint">Process only the first N items without images</small>
+          </div>
+
+          <div className="form-group">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={includePlaceholders}
+                onChange={(e) => setIncludePlaceholders(e.target.checked)}
+                disabled={loading}
+              />
+              <span>Include placeholder images</span>
+            </label>
+            <small className="field-hint">If checked, items will be updated even if only a placeholder image is found</small>
+          </div>
+
+          {error && <div className="error-message">{error}</div>}
+
+          <div className="modal-actions">
+            <button type="button" onClick={onClose} className="cancel-button" disabled={loading}>
+              Cancel
+            </button>
+            <button type="submit" className="save-button" disabled={loading}>
+              {loading ? 'Starting...' : 'Start Update'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
