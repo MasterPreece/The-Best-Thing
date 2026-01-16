@@ -295,10 +295,10 @@ async function sortByPageviews(articleTitles, targetCount = TARGET_COUNT) {
  */
 async function seedTopArticles(targetCount = TARGET_COUNT) {
   // Ensure we have a valid count
-  const finalCount = targetCount || TARGET_COUNT;
-  const estimatedMinutes = Math.round(finalCount / 100);
+  const targetArticleCount = targetCount || TARGET_COUNT;
+  const estimatedMinutes = Math.round(targetArticleCount / 100);
   
-  console.log(`\n🚀 Starting to seed top ${finalCount} Wikipedia articles`);
+  console.log(`\n🚀 Starting to seed top ${targetArticleCount} Wikipedia articles`);
   console.log(`⏱️  Estimated time: ~${estimatedMinutes}-${Math.round(estimatedMinutes * 1.2)} minutes (respecting rate limits)\n`);
   
   const startTime = Date.now();
