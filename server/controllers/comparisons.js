@@ -509,29 +509,30 @@ const submitVote = (req, res) => {
                 } else {
                   // Use SQLite callback API
                   dbInstance.run(upsertSql, upsertParams, function(err) {
-                  if (err) {
-                    console.error('Error updating user session:', err);
-                    // Continue anyway - don't fail the vote if session update fails
-                  }
-                  
-                  // Get updated count to determine if we should prompt
-                  dbInstance.get(`
-                    SELECT comparisons_count FROM user_sessions WHERE session_id = ?
-                  `, [userSessionId], (err, row) => {
                     if (err) {
-                      console.error('Error getting user session count:', err);
+                      console.error('Error updating user session:', err);
+                      // Continue anyway - don't fail the vote if session update fails
                     }
-                    const comparisonCount = row ? row.comparisons_count : 0;
-                    const shouldPromptAccount = comparisonCount >= 10;
                     
-                    res.json({
-                      success: true,
-                      newRatings: {
-                        item1: newRating1,
-                        item2: newRating2
-                      },
-                      shouldPromptAccount,
-                      comparisonCount
+                    // Get updated count to determine if we should prompt
+                    dbInstance.get(`
+                      SELECT comparisons_count FROM user_sessions WHERE session_id = ?
+                    `, [userSessionId], (err, row) => {
+                      if (err) {
+                        console.error('Error getting user session count:', err);
+                      }
+                      const comparisonCount = row ? row.comparisons_count : 0;
+                      const shouldPromptAccount = comparisonCount >= 10;
+                      
+                      res.json({
+                        success: true,
+                        newRatings: {
+                          item1: newRating1,
+                          item2: newRating2
+                        },
+                        shouldPromptAccount,
+                        comparisonCount
+                      });
                     });
                   });
                 }
