@@ -161,8 +161,6 @@ const Comparison = ({ userSessionId }) => {
         }
       }
 
-      showToast('Vote recorded! Loading next comparison...', 'success');
-
       // Wait a moment to show the selection with animation, then fetch new comparison
       setTimeout(() => {
         // Add a brief fade-out effect before loading next
