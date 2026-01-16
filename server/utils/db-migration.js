@@ -155,13 +155,17 @@ const runMigrations = async () => {
           }
         }
         
-        // Create index
+        // Create index after column is added
         try {
           await db.query(`
             CREATE INDEX IF NOT EXISTS idx_items_category_id ON items(category_id)
           `);
+          console.log('Successfully created category index');
         } catch (err) {
-          console.error('Error creating category index:', err);
+          // If index creation fails, log but don't fail - column might not exist yet
+          if (!err.message.includes('does not exist')) {
+            console.error('Error creating category index:', err);
+          }
         }
       }
     } catch (err) {

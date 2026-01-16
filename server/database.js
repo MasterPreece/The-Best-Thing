@@ -98,7 +98,7 @@ const createTables = async () => {
         )
       `);
       
-      // Items table
+      // Items table (without category_id initially - will be added via migration)
       await client.query(`
         CREATE TABLE IF NOT EXISTS items (
           id SERIAL PRIMARY KEY,
@@ -106,7 +106,6 @@ const createTables = async () => {
           title VARCHAR(500) NOT NULL UNIQUE,
           image_url TEXT,
           description TEXT,
-          category_id INTEGER REFERENCES categories(id),
           elo_rating DOUBLE PRECISION DEFAULT 1500,
           comparison_count INTEGER DEFAULT 0,
           wins INTEGER DEFAULT 0,
@@ -117,10 +116,6 @@ const createTables = async () => {
       
       await client.query(`
         CREATE UNIQUE INDEX IF NOT EXISTS idx_items_title ON items(title)
-      `);
-      
-      await client.query(`
-        CREATE INDEX IF NOT EXISTS idx_items_category_id ON items(category_id)
       `);
       
       // Users table - must be created before comparisons (which references it)
