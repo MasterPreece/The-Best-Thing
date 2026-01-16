@@ -460,13 +460,55 @@ const submitVote = (req, res) => {
               
               // Update user session if provided (for anonymous users) and check if should prompt
               if (userSessionId && !userId) {
-                dbInstance.run(`
-                  INSERT INTO user_sessions (session_id, comparisons_count, last_active)
-                  VALUES (?, 1, CURRENT_TIMESTAMP)
-                  ON CONFLICT(session_id) DO UPDATE SET
-                    comparisons_count = comparisons_count + 1,
-                    last_active = CURRENT_TIMESTAMP
-                `, [userSessionId], function(err) {
+                const dbType = db.getDbType();
+                // PostgreSQL requires table qualification in ON CONFLICT UPDATE
+                const upsertSql = dbType === 'postgres'
+                  ? `INSERT INTO user_sessions (session_id, comparisons_count, last_active)
+                     VALUES ($1, 1, CURRENT_TIMESTAMP)
+                     ON CONFLICT(session_id) DO UPDATE SET
+                       comparisons_count = user_sessions.comparisons_count + 1,
+                       last_active = CURRENT_TIMESTAMP`
+                  : `INSERT INTO user_sessions (session_id, comparisons_count, last_active)
+                     VALUES (?, 1, CURRENT_TIMESTAMP)
+                     ON CONFLICT(session_id) DO UPDATE SET
+                       comparisons_count = comparisons_count + 1,
+                       last_active = CURRENT_TIMESTAMP`;
+                
+                const upsertParams = dbType === 'postgres' ? [userSessionId] : [userSessionId];
+                
+                if (dbType === 'postgres') {
+                  // Use db.query() for PostgreSQL
+                  db.query(upsertSql, upsertParams).then(() => {
+                    // Get updated count
+                    return db.query('SELECT comparisons_count FROM user_sessions WHERE session_id = $1', [userSessionId]);
+                  }).then(result => {
+                    const comparisonCount = result.rows[0] ? result.rows[0].comparisons_count : 0;
+                    const shouldPromptAccount = comparisonCount >= 10;
+                    
+                    res.json({
+                      success: true,
+                      newRatings: {
+                        item1: newRating1,
+                        item2: newRating2
+                      },
+                      shouldPromptAccount,
+                      comparisonCount
+                    });
+                  }).catch(err => {
+                    console.error('Error updating user session (PostgreSQL):', err);
+                    // Continue anyway - don't fail the vote if session update fails
+                    res.json({
+                      success: true,
+                      newRatings: {
+                        item1: newRating1,
+                        item2: newRating2
+                      },
+                      shouldPromptAccount: false
+                    });
+                  });
+                } else {
+                  // Use SQLite callback API
+                  dbInstance.run(upsertSql, upsertParams, function(err) {
                   if (err) {
                     console.error('Error updating user session:', err);
                     // Continue anyway - don't fail the vote if session update fails
@@ -492,7 +534,8 @@ const submitVote = (req, res) => {
                       comparisonCount
                     });
                   });
-                });
+                  });
+                }
               } else {
                 res.json({
                   success: true,
