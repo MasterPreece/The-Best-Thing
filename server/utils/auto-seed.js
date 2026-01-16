@@ -1,56 +1,11 @@
 const db = require('../database');
-const axios = require('axios');
+const wikipediaFetcher = require('../services/wikipedia-fetcher');
 
-const WIKIPEDIA_API = 'https://en.wikipedia.org/w/api.php';
 const API_DELAY = 300;
 const INITIAL_SEED_COUNT = 50; // Seed with 50 items initially
 
-/**
- * Fetch page information including image
- */
-const fetchPageInfo = async (title) => {
-  try {
-    const response = await axios.get(WIKIPEDIA_API, {
-      params: {
-        action: 'query',
-        format: 'json',
-        titles: title,
-        prop: 'pageimages|extracts|pageprops',
-        piprop: 'original',
-        exintro: true,
-        explaintext: true,
-        pithumbsize: 400,
-        redirects: 1
-      },
-      headers: {
-        'User-Agent': 'TheBestThing/1.0 (https://github.com/MasterPreece/The-Best-Thing; contact@example.com)'
-      }
-    });
-    
-    const pages = response.data.query.pages;
-    const pageId = Object.keys(pages)[0];
-    const page = pages[pageId];
-    
-    if (page.missing || page.invalid || !page.pageid) {
-      return null;
-    }
-    
-    if (page.title.includes('(disambiguation)') || 
-        (page.title.includes('List of') && page.title.includes(':'))) {
-      return null;
-    }
-    
-    return {
-      wikipediaId: page.pageid,
-      title: page.title,
-      imageUrl: page.original?.source || page.thumbnail?.source || null,
-      description: page.extract?.substring(0, 500) || ''
-    };
-  } catch (error) {
-    console.error(`Error fetching page ${title}:`, error.message);
-    return null;
-  }
-};
+// Use the shared fetchPageInfo function from wikipedia-fetcher
+const fetchPageInfo = wikipediaFetcher.fetchPageInfo;
 
 /**
  * Get random Wikipedia articles

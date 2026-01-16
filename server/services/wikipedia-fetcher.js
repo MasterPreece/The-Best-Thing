@@ -4,6 +4,10 @@ const db = require('../database');
 // Wikipedia API endpoint
 const WIKIPEDIA_API = 'https://en.wikipedia.org/w/api.php';
 
+// Unsplash API endpoint
+const UNSPLASH_API = 'https://api.unsplash.com';
+const UNSPLASH_ACCESS_KEY = process.env.UNSPLASH_ACCESS_KEY || null;
+
 // Rate limiting: delay between API calls (ms) - be respectful!
 const API_DELAY = 300;
 
@@ -318,8 +322,76 @@ const getArticlesWithPageviews = async (articleTitles) => {
 };
 
 /**
+ * Search Unsplash for an image by title
+ * Falls back gracefully if API key is not set or if search fails
+ */
+const searchUnsplashImage = async (searchQuery) => {
+  // If no API key is set, skip Unsplash (graceful degradation)
+  if (!UNSPLASH_ACCESS_KEY) {
+    return null;
+  }
+
+  try {
+    // Clean up the search query - remove Wikipedia disambiguation text and extra info
+    let cleanQuery = searchQuery
+      .replace(/\(.*?\)/g, '') // Remove parentheses content
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim()
+      .substring(0, 50); // Limit length
+
+    if (!cleanQuery || cleanQuery.length < 2) {
+      return null;
+    }
+
+    const response = await axios.get(`${UNSPLASH_API}/search/photos`, {
+      params: {
+        query: cleanQuery,
+        per_page: 1, // We only need one image
+        orientation: 'landscape' // Prefer landscape images for better display
+      },
+      headers: {
+        'Authorization': `Client-ID ${UNSPLASH_ACCESS_KEY}`
+      },
+      timeout: 5000 // 5 second timeout
+    });
+
+    const results = response.data?.results || [];
+    if (results.length > 0 && results[0]?.urls?.regular) {
+      return results[0].urls.regular; // Use regular size (good quality, reasonable size)
+    }
+
+    return null;
+  } catch (error) {
+    // Silently fail - Unsplash is optional
+    // Don't log errors unless it's a config issue
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      // API key issue - only log once to avoid spam
+      if (!searchUnsplashImage._loggedApiKeyWarning) {
+        console.warn('⚠️  Unsplash API key is invalid or rate limit exceeded. Skipping Unsplash fallback.');
+        searchUnsplashImage._loggedApiKeyWarning = true;
+      }
+    }
+    return null;
+  }
+};
+
+/**
+ * Generate a placeholder image URL
+ * Uses a simple placeholder service with the item title
+ */
+const getPlaceholderImage = (title) => {
+  // Create a simple placeholder using a placeholder service
+  // Using placeholder.com with text showing the title
+  const encodedTitle = encodeURIComponent(title.substring(0, 30));
+  return `https://via.placeholder.com/600x400/4a5568/ffffff?text=${encodedTitle}`;
+};
+
+/**
  * Fetch page information including image
- * Tries multiple methods to get an image
+ * Tries multiple methods to get an image:
+ * 1. Wikipedia (original source)
+ * 2. Unsplash (fallback search)
+ * 3. Placeholder (final fallback)
  */
 const fetchPageInfo = async (title) => {
   try {
@@ -360,14 +432,30 @@ const fetchPageInfo = async (title) => {
     
     // Try multiple sources for image (original, thumbnail, or first image from images list)
     let imageUrl = null;
+    let imageSource = null;
+    
+    // Step 1: Try Wikipedia images first
     if (page.original?.source) {
       imageUrl = page.original.source;
+      imageSource = 'wikipedia';
     } else if (page.thumbnail?.source) {
       imageUrl = page.thumbnail.source;
-    } else if (page.images && page.images.length > 0) {
-      // Try to get the first image file
-      // Note: images array contains filenames, we'd need another API call to get URLs
-      // For now, we'll skip this and rely on pageimages
+      imageSource = 'wikipedia';
+    }
+    
+    // Step 2: If no Wikipedia image, try Unsplash
+    if (!imageUrl) {
+      const unsplashImage = await searchUnsplashImage(page.title);
+      if (unsplashImage) {
+        imageUrl = unsplashImage;
+        imageSource = 'unsplash';
+      }
+    }
+    
+    // Step 3: If still no image, use placeholder
+    if (!imageUrl) {
+      imageUrl = getPlaceholderImage(page.title);
+      imageSource = 'placeholder';
     }
     
     return {
@@ -375,7 +463,8 @@ const fetchPageInfo = async (title) => {
       title: page.title,
       imageUrl,
       description: page.extract?.substring(0, 500) || '',
-      hasImage: !!imageUrl
+      hasImage: !!imageUrl,
+      imageSource // Track where the image came from for debugging
     };
   } catch (error) {
     if (error.response?.status === 403) {

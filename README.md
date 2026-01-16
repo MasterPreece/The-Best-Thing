@@ -7,7 +7,7 @@ A fun meme website where users compare two things and vote for the better one. B
 - 🎯 **Compare Items**: See two Wikipedia pages side-by-side and choose which is better
 - 📊 **Rankings**: Items are ranked using an Elo rating system based on user votes
 - 🏅 **Leaderboards**: See who has made the most comparisons
-- 🖼️ **Wikipedia Integration**: Uses top Wikipedia pages with their primary images
+- 🖼️ **Smart Image Fallback**: Uses Wikipedia images first, falls back to Unsplash, then placeholder images
 
 ## Getting Started
 
@@ -15,6 +15,25 @@ A fun meme website where users compare two things and vote for the better one. B
 
 - Node.js (v14 or higher)
 - npm or yarn
+- (Optional) Unsplash API key for better image fallback coverage
+
+### Optional: Unsplash API Key Setup
+
+The app will work without an Unsplash API key, but adding one improves image coverage when Wikipedia articles don't have images:
+
+1. Sign up for a free Unsplash account: https://unsplash.com/developers
+2. Create a new application
+3. Copy your Access Key
+4. Set it as an environment variable:
+   ```bash
+   # In your .env file (local development)
+   UNSPLASH_ACCESS_KEY=your_access_key_here
+   
+   # Or in Railway (production)
+   # Add UNSPLASH_ACCESS_KEY to your environment variables
+   ```
+
+**Note**: Without an API key, the app will still work but will use placeholder images for items without Wikipedia images.
 
 ### Installation
 
