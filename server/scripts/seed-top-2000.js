@@ -26,8 +26,8 @@ const TARGET_COUNT = parseInt(process.argv[2]) || 2000;
 /**
  * Get articles from multiple high-quality sources
  */
-async function gatherTopArticles(count = TARGET_COUNT) {
-  console.log(`\n🔍 Gathering articles from multiple sources to find top ${TARGET_COUNT}...\n`);
+async function gatherTopArticles(targetCount = TARGET_COUNT) {
+  console.log(`\n🔍 Gathering articles from multiple sources to find top ${targetCount}...\n`);
   
   const allArticles = new Set();
   
@@ -160,8 +160,9 @@ async function gatherTopArticles(count = TARGET_COUNT) {
     'Category:Technology'
   ];
   
+  const gatherTarget = targetCount * 2; // Gather 2x to ensure we have enough for sorting
   for (const category of popularCategories) {
-    if (allArticles.size >= TARGET_COUNT * 2) break;
+    if (allArticles.size >= gatherTarget) break;
     
     try {
       const params = {
@@ -291,8 +292,12 @@ async function sortByPageviews(articleTitles, targetCount = TARGET_COUNT) {
  * Main seeding function
  */
 async function seedTopArticles(targetCount = TARGET_COUNT) {
-  console.log(`\n🚀 Starting to seed top ${targetCount} Wikipedia articles`);
-  console.log(`⏱️  Estimated time: ~15-20 minutes (respecting rate limits)\n`);
+  // Ensure we have a valid count
+  const finalCount = targetCount || TARGET_COUNT;
+  const estimatedMinutes = Math.round(finalCount / 100);
+  
+  console.log(`\n🚀 Starting to seed top ${finalCount} Wikipedia articles`);
+  console.log(`⏱️  Estimated time: ~${estimatedMinutes}-${Math.round(estimatedMinutes * 1.2)} minutes (respecting rate limits)\n`);
   
   const startTime = Date.now();
   

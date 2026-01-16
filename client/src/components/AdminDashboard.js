@@ -538,6 +538,7 @@ const BulkImportModal = ({ onClose, onSuccess, api }) => {
 
 // Seed Top 2000 Modal
 const SeedTop2000Modal = ({ onClose, onSuccess, api }) => {
+  const [count, setCount] = useState('2000');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -546,10 +547,22 @@ const SeedTop2000Modal = ({ onClose, onSuccess, api }) => {
     e.preventDefault();
     setError('');
     setSuccess(false);
+    
+    // Validate count
+    const parsedCount = parseInt(count);
+    if (!count || isNaN(parsedCount) || parsedCount <= 0) {
+      setError('Please enter a valid number greater than 0');
+      return;
+    }
+    if (parsedCount > 10000) {
+      setError('Count cannot exceed 10,000 (to respect API limits)');
+      return;
+    }
+    
     setLoading(true);
 
     try {
-      await api.post('/api/admin/seed-top2000', {});
+      await api.post('/api/admin/seed-top2000', { count: parsedCount });
 
       setSuccess(true);
     } catch (err) {
@@ -586,15 +599,15 @@ const SeedTop2000Modal = ({ onClose, onSuccess, api }) => {
                   </ul>
                 </li>
                 <li>Articles will be sorted by actual pageviews (using Wikipedia's REST API)</li>
-                <li>Top 2000 most popular articles will be added to your database</li>
+                <li>Top {count} most popular articles will be added to your database</li>
               </ul>
             </div>
             
             <div className="warning-box">
               <p><strong>⏱️ Timing:</strong></p>
               <ul>
-                <li>Estimated time: <strong>15-20 minutes</strong></li>
-                <li>The process respects Wikipedia's rate limits</li>
+                <li>Estimated time: <strong>{Math.round(parseInt(count || 2000) / 120)}-{Math.round(parseInt(count || 2000) / 80)} minutes</strong> (approximately 1 minute per 100 articles)</li>
+                <li>The process respects Wikipedia's rate limits (300ms delays)</li>
                 <li>Progress is logged in Railway server logs</li>
                 <li>Check the stats section after completion to see updated item counts</li>
               </ul>
@@ -625,33 +638,62 @@ const SeedTop2000Modal = ({ onClose, onSuccess, api }) => {
 
         <form onSubmit={handleSubmit}>
           <div className="seed-top2000-info">
-            <p>This will seed your database with the <strong>top 2000 most popular Wikipedia articles</strong> based on actual pageviews.</p>
+            <p>Seed your database with the <strong>top most popular Wikipedia articles</strong> based on actual pageviews.</p>
+            
+            <div className="form-group">
+              <label>
+                Number of Articles *
+                <span className="field-hint"> - How many top articles to add</span>
+              </label>
+              <input
+                type="number"
+                value={count}
+                onChange={(e) => setCount(e.target.value)}
+                placeholder="2000"
+                min="1"
+                max="10000"
+                required
+                disabled={loading}
+              />
+              <small className="field-hint">
+                Recommended: 2000 for a comprehensive start. You can trigger this multiple times to add more articles over time.
+              </small>
+            </div>
             
             <div className="info-box">
               <p><strong>How it works:</strong></p>
               <ul>
                 <li>Gathers articles from multiple high-quality sources:
                   <ul>
-                    <li>Most viewed articles (500)</li>
-                    <li>Featured articles (500)</li>
-                    <li>Good articles (500)</li>
+                    <li>Most viewed articles</li>
+                    <li>Featured articles</li>
+                    <li>Good articles</li>
                     <li>Popular categories (Countries, Cities, Biography, Films, Music, Video games, Sports, Technology)</li>
                   </ul>
                 </li>
                 <li>Uses Wikipedia's Pageviews REST API to sort by actual popularity</li>
-                <li>Selects the top 2000 most viewed articles</li>
+                <li>Selects the top {count || 'N'} most viewed articles</li>
                 <li>Fetches images and descriptions for each article</li>
                 <li>Respects Wikipedia's rate limits (300ms delays between requests)</li>
               </ul>
             </div>
             
+            <div className="info-box" style={{ background: '#e7f3ff', borderLeft: '4px solid #0066cc' }}>
+              <p><strong>💡 Continuous Growth:</strong></p>
+              <p style={{ margin: '8px 0', fontSize: '14px' }}>
+                Your database already grows automatically! The system adds ~5 new articles every 30 minutes when above the threshold (50 items). 
+                This seeding tool is for <strong>bulk initial seeding</strong> or when you want to add a large batch of popular articles quickly.
+              </p>
+            </div>
+            
             <div className="warning-box">
               <p><strong>⚠️ Important:</strong></p>
               <ul>
-                <li>This process takes approximately <strong>15-20 minutes</strong></li>
+                <li>This process takes approximately <strong>{Math.round(parseInt(count || 2000) / 120)}-{Math.round(parseInt(count || 2000) / 80)} minutes</strong> (1 min per ~100 articles)</li>
                 <li>It runs in the background - you can close this modal</li>
                 <li>Progress is logged in Railway server logs</li>
                 <li>Existing items won't be duplicated</li>
+                <li>You can trigger this multiple times to gradually build up your database</li>
               </ul>
             </div>
           </div>
