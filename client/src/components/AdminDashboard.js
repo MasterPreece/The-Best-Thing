@@ -13,6 +13,7 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
   const [showUpdateImagesModal, setShowUpdateImagesModal] = useState(false);
+  const [showSeedTop2000Modal, setShowSeedTop2000Modal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [error, setError] = useState('');
 
@@ -142,6 +143,9 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
           </button>
           <button className="bulk-import-button" onClick={() => setShowBulkImportModal(true)}>
             📊 Bulk Import
+          </button>
+          <button className="seed-top2000-button" onClick={() => setShowSeedTop2000Modal(true)}>
+            🌱 Seed Top 2000
           </button>
           <button className="update-images-button" onClick={() => setShowUpdateImagesModal(true)}>
             🖼️ Update Images
@@ -287,6 +291,20 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
             setTimeout(() => {
               fetchStats();
             }, 5000);
+          }}
+          api={api}
+        />
+      )}
+
+      {showSeedTop2000Modal && (
+        <SeedTop2000Modal
+          onClose={() => setShowSeedTop2000Modal(false)}
+          onSuccess={() => {
+            setShowSeedTop2000Modal(false);
+            // Refresh stats after a longer delay (seeding takes 15-20 minutes)
+            setTimeout(() => {
+              fetchStats();
+            }, 60000); // Check after 1 minute
           }}
           api={api}
         />
@@ -513,6 +531,142 @@ const BulkImportModal = ({ onClose, onSuccess, api }) => {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+};
+
+// Seed Top 2000 Modal
+const SeedTop2000Modal = ({ onClose, onSuccess, api }) => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess(false);
+    setLoading(true);
+
+    try {
+      await api.post('/api/admin/seed-top2000', {});
+
+      setSuccess(true);
+    } catch (err) {
+      console.error('Seed top 2000 error:', err);
+      setError(err.response?.data?.error || err.response?.data?.message || err.message || 'Failed to start seeding');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (success) {
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-header">
+            <h2>🌱 Seed Top 2000 Articles</h2>
+            <button className="close-button" onClick={onClose}>×</button>
+          </div>
+          
+          <div className="seed-success">
+            <div className="success-icon">✅</div>
+            <h3>Seeding Started!</h3>
+            <p>The top 2000 articles seeding process has been started in the background.</p>
+            
+            <div className="info-box">
+              <p><strong>📋 What happens next:</strong></p>
+              <ul>
+                <li>The system will gather articles from multiple high-quality sources:
+                  <ul>
+                    <li>Most viewed Wikipedia articles</li>
+                    <li>Featured articles</li>
+                    <li>Good articles</li>
+                    <li>Popular categories (Countries, Cities, Biography, Films, etc.)</li>
+                  </ul>
+                </li>
+                <li>Articles will be sorted by actual pageviews (using Wikipedia's REST API)</li>
+                <li>Top 2000 most popular articles will be added to your database</li>
+              </ul>
+            </div>
+            
+            <div className="warning-box">
+              <p><strong>⏱️ Timing:</strong></p>
+              <ul>
+                <li>Estimated time: <strong>15-20 minutes</strong></li>
+                <li>The process respects Wikipedia's rate limits</li>
+                <li>Progress is logged in Railway server logs</li>
+                <li>Check the stats section after completion to see updated item counts</li>
+              </ul>
+            </div>
+            
+            <p className="info-text">
+              💡 <strong>Tip:</strong> You can monitor progress by checking Railway logs. The process will continue even if you close this modal.
+            </p>
+            
+            <div className="modal-actions">
+              <button onClick={onClose} className="save-button">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>🌱 Seed Top 2000 Articles</h2>
+          <button className="close-button" onClick={onClose}>×</button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="seed-top2000-info">
+            <p>This will seed your database with the <strong>top 2000 most popular Wikipedia articles</strong> based on actual pageviews.</p>
+            
+            <div className="info-box">
+              <p><strong>How it works:</strong></p>
+              <ul>
+                <li>Gathers articles from multiple high-quality sources:
+                  <ul>
+                    <li>Most viewed articles (500)</li>
+                    <li>Featured articles (500)</li>
+                    <li>Good articles (500)</li>
+                    <li>Popular categories (Countries, Cities, Biography, Films, Music, Video games, Sports, Technology)</li>
+                  </ul>
+                </li>
+                <li>Uses Wikipedia's Pageviews REST API to sort by actual popularity</li>
+                <li>Selects the top 2000 most viewed articles</li>
+                <li>Fetches images and descriptions for each article</li>
+                <li>Respects Wikipedia's rate limits (300ms delays between requests)</li>
+              </ul>
+            </div>
+            
+            <div className="warning-box">
+              <p><strong>⚠️ Important:</strong></p>
+              <ul>
+                <li>This process takes approximately <strong>15-20 minutes</strong></li>
+                <li>It runs in the background - you can close this modal</li>
+                <li>Progress is logged in Railway server logs</li>
+                <li>Existing items won't be duplicated</li>
+              </ul>
+            </div>
+          </div>
+
+          {error && <div className="error-message">{error}</div>}
+
+          <div className="modal-actions">
+            <button type="button" onClick={onClose} className="cancel-button" disabled={loading}>
+              Cancel
+            </button>
+            <button type="submit" className="save-button" disabled={loading}>
+              {loading ? 'Starting...' : 'Start Seeding'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
