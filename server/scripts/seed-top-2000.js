@@ -19,12 +19,14 @@ const WIKIPEDIA_API = 'https://en.wikipedia.org/w/api.php';
 const PAGEVIEWS_API = 'https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia/all-access/user';
 const API_DELAY = 300; // 300ms between requests (respectful rate limiting)
 
+// TARGET_COUNT will be read from process.argv when run as script, or default to 2000
+// When used as module, we'll accept it as a parameter
 const TARGET_COUNT = parseInt(process.argv[2]) || 2000;
 
 /**
  * Get articles from multiple high-quality sources
  */
-async function gatherTopArticles() {
+async function gatherTopArticles(count = TARGET_COUNT) {
   console.log(`\n🔍 Gathering articles from multiple sources to find top ${TARGET_COUNT}...\n`);
   
   const allArticles = new Set();
@@ -234,8 +236,8 @@ async function getArticlePageviews(articleTitle) {
 /**
  * Sort articles by pageviews and return top N
  */
-async function sortByPageviews(articleTitles) {
-  console.log(`📈 Getting pageview data for ${articleTitles.length} articles to find top ${TARGET_COUNT}...\n`);
+async function sortByPageviews(articleTitles, targetCount = TARGET_COUNT) {
+  console.log(`📈 Getting pageview data for ${articleTitles.length} articles to find top ${targetCount}...\n`);
   
   const articlesWithViews = [];
   const batchSize = 20; // Process 20 at a time to balance speed and rate limits
@@ -280,7 +282,7 @@ async function sortByPageviews(articleTitles) {
   });
   
   return articlesWithViews
-    .slice(0, TARGET_COUNT)
+    .slice(0, targetCount)
     .map(item => item.title)
     .filter(Boolean);
 }
@@ -288,8 +290,8 @@ async function sortByPageviews(articleTitles) {
 /**
  * Main seeding function
  */
-async function seedTopArticles() {
-  console.log(`\n🚀 Starting to seed top ${TARGET_COUNT} Wikipedia articles`);
+async function seedTopArticles(targetCount = TARGET_COUNT) {
+  console.log(`\n🚀 Starting to seed top ${targetCount} Wikipedia articles`);
   console.log(`⏱️  Estimated time: ~15-20 minutes (respecting rate limits)\n`);
   
   const startTime = Date.now();
@@ -317,15 +319,15 @@ async function seedTopArticles() {
   console.log(`📊 Current database has ${currentCount} items\n`);
   
   // Step 1: Gather articles from multiple sources
-  const allArticleTitles = await gatherTopArticles();
+  const allArticleTitles = await gatherTopArticles(targetCount);
   
   if (allArticleTitles.length === 0) {
-    console.error('❌ No articles gathered. Exiting.');
-    process.exit(1);
+    console.error('❌ No articles gathered.');
+    throw new Error('No articles gathered');
   }
   
   // Step 2: Sort by pageviews and get top N
-  const topArticles = await sortByPageviews(allArticleTitles);
+  const topArticles = await sortByPageviews(allArticleTitles, targetCount);
   
   console.log(`\n📋 Processing top ${topArticles.length} articles...\n`);
   
@@ -461,11 +463,19 @@ async function seedTopArticles() {
   console.log(`   ❌ Failed: ${failed}`);
   console.log(`   ⏱️  Time elapsed: ${elapsed} minutes\n`);
   
-  process.exit(0);
+  return { inserted, skipped, failed, finalCount, previousCount: currentCount };
 }
 
-seedTopArticles().catch(err => {
-  console.error('\n❌ Fatal error:', err);
-  process.exit(1);
-});
+// Export for use as module
+module.exports = { seedTopArticles };
+
+// Run if called directly
+if (require.main === module) {
+  seedTopArticles().catch(err => {
+    console.error('\n❌ Fatal error:', err);
+    process.exit(1);
+  }).then(() => {
+    process.exit(0);
+  });
+}
 

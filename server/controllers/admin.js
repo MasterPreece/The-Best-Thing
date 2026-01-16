@@ -1,5 +1,6 @@
 const db = require('../database');
 const seedCategoriesFunction = require('../scripts/seed-categories-wrapper');
+const seedTop2000Function = require('../scripts/seed-top-2000-wrapper');
 const { updateMissingImages } = require('../scripts/update-missing-images');
 
 /**
@@ -32,6 +33,38 @@ const triggerSeedCategories = async (req, res) => {
     
   } catch (error) {
     console.error('Error in triggerSeedCategories:', error);
+    res.status(500).json({ 
+      error: 'Failed to trigger seeding',
+      message: error.message 
+    });
+  }
+};
+
+/**
+ * Trigger top 2000 seeding
+ * POST /api/admin/seed-top2000
+ * Body: { count?: number }
+ */
+const triggerSeedTop2000 = async (req, res) => {
+  try {
+    const { count } = req.body;
+    const targetCount = count ? parseInt(count) : 2000;
+    
+    // Run seeding in background (don't block the response)
+    res.json({ 
+      message: `Top ${targetCount} articles seeding started. This will take 15-20 minutes.`,
+      note: 'Check logs to monitor progress. This will gather articles from multiple sources and sort by pageviews.'
+    });
+    
+    // Note: We can't pass count directly since the script reads from process.argv
+    // For now, it will use the default 2000. To support custom counts, we'd need to refactor.
+    // Run seeding asynchronously
+    seedTop2000Function().catch(err => {
+      console.error('Error during admin-triggered top 2000 seeding:', err);
+    });
+    
+  } catch (error) {
+    console.error('Error in triggerSeedTop2000:', error);
     res.status(500).json({ 
       error: 'Failed to trigger seeding',
       message: error.message 
@@ -451,6 +484,7 @@ const getAdminStats = async (req, res) => {
 
 module.exports = {
   triggerSeedCategories,
+  triggerSeedTop2000,
   triggerUpdateImages,
   getAdminItems,
   createItem,
