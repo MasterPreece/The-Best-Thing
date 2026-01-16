@@ -63,8 +63,9 @@ async function gatherTopArticles(targetCount = TARGET_COUNT) {
     let continueToken = null;
     let fetched = 0;
     const maxFeatured = 500;
+    const gatherTarget = targetCount * 2; // Gather 2x to ensure we have enough for sorting
     
-    while (fetched < maxFeatured && allArticles.size < TARGET_COUNT * 2) {
+    while (fetched < maxFeatured && allArticles.size < gatherTarget) {
       const params = {
         action: 'query',
         format: 'json',
@@ -108,8 +109,9 @@ async function gatherTopArticles(targetCount = TARGET_COUNT) {
     let continueToken = null;
     let fetched = 0;
     const maxGood = 500;
+    const gatherTarget = targetCount * 2; // Gather 2x to ensure we have enough for sorting
     
-    while (fetched < maxGood && allArticles.size < TARGET_COUNT * 2) {
+    while (fetched < maxGood && allArticles.size < gatherTarget) {
       const params = {
         action: 'query',
         format: 'json',
