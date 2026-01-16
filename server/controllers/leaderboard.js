@@ -1,6 +1,6 @@
 const db = require('../database');
 
-const getLeaderboard = (req, res) => {
+const getLeaderboard = async (req, res) => {
   let limit = parseInt(req.query.limit) || 100;
   
   // Cap at 10,000 to prevent performance issues
@@ -8,65 +8,103 @@ const getLeaderboard = (req, res) => {
     limit = 10000;
   }
   
+  const dbType = db.getDbType();
   const dbInstance = db.getDb();
   
-  // If limit is very large, get all (no LIMIT clause)
-  if (limit >= 10000) {
-    dbInstance.all(`
-      SELECT session_id, comparisons_count, last_active
-      FROM user_sessions
-      ORDER BY comparisons_count DESC
-    `, [], (err, rows) => {
-      if (err) {
-        console.error('Error fetching leaderboard:', err);
-        return res.status(500).json({ error: 'Failed to fetch leaderboard', details: err.message });
-      }
-      
-      console.log(`[Leaderboard] Fetched ${rows ? rows.length : 0} user sessions (all)`);
-      
-      res.json({
-        leaderboard: (rows || []).map((row, index) => ({
-          rank: index + 1,
-          sessionId: row.session_id,
-          comparisonsCount: row.comparisons_count || 0,
-          lastActive: row.last_active
-        })),
-        total: rows ? rows.length : 0
-      });
-    });
-  } else {
-    dbInstance.all(`
-      SELECT session_id, comparisons_count, last_active
-      FROM user_sessions
-      ORDER BY comparisons_count DESC
-      LIMIT ?
-    `, [limit], (err, rows) => {
-      if (err) {
-        console.error('Error fetching leaderboard:', err);
-        return res.status(500).json({ error: 'Failed to fetch leaderboard', details: err.message });
-      }
-      
-      console.log(`[Leaderboard] Fetched ${rows ? rows.length : 0} user sessions with limit ${limit}`);
-      
-      // Get total count for info
-      dbInstance.get(`SELECT COUNT(*) as total FROM user_sessions`, [], (err, countRow) => {
-        if (err) {
-          console.error('Error getting total count:', err);
-        }
-        const total = countRow ? countRow.total : (rows ? rows.length : 0);
+  try {
+    let rows = [];
+    let total = 0;
+    
+    if (dbType === 'postgres') {
+      // PostgreSQL: Use async/await with db.query()
+      if (limit >= 10000) {
+        // Get all
+        const result = await db.query(`
+          SELECT session_id, comparisons_count, last_active
+          FROM user_sessions
+          ORDER BY comparisons_count DESC
+        `);
+        rows = result.rows || [];
         
-        console.log(`[Leaderboard] Total user sessions in database: ${total}`);
+        // Get total count
+        const countResult = await db.query('SELECT COUNT(*) as total FROM user_sessions');
+        total = parseInt(countResult.rows[0]?.total || 0);
+      } else {
+        // Get with limit
+        const result = await db.query(`
+          SELECT session_id, comparisons_count, last_active
+          FROM user_sessions
+          ORDER BY comparisons_count DESC
+          LIMIT $1
+        `, [limit]);
+        rows = result.rows || [];
         
-        res.json({
-          leaderboard: (rows || []).map((row, index) => ({
-            rank: index + 1,
-            sessionId: row.session_id,
-            comparisonsCount: row.comparisons_count || 0,
-            lastActive: row.last_active
-          })),
-          total
+        // Get total count
+        const countResult = await db.query('SELECT COUNT(*) as total FROM user_sessions');
+        total = parseInt(countResult.rows[0]?.total || 0);
+      }
+    } else {
+      // SQLite: Use callback-style
+      if (limit >= 10000) {
+        // Get all
+        rows = await new Promise((resolve, reject) => {
+          dbInstance.all(`
+            SELECT session_id, comparisons_count, last_active
+            FROM user_sessions
+            ORDER BY comparisons_count DESC
+          `, [], (err, resultRows) => {
+            if (err) reject(err);
+            else resolve(resultRows || []);
+          });
         });
-      });
+        
+        // Get total count
+        const countRow = await new Promise((resolve) => {
+          dbInstance.get('SELECT COUNT(*) as total FROM user_sessions', [], (err, row) => {
+            resolve(err ? null : row);
+          });
+        });
+        total = countRow ? countRow.total : rows.length;
+      } else {
+        // Get with limit
+        rows = await new Promise((resolve, reject) => {
+          dbInstance.all(`
+            SELECT session_id, comparisons_count, last_active
+            FROM user_sessions
+            ORDER BY comparisons_count DESC
+            LIMIT ?
+          `, [limit], (err, resultRows) => {
+            if (err) reject(err);
+            else resolve(resultRows || []);
+          });
+        });
+        
+        // Get total count
+        const countRow = await new Promise((resolve) => {
+          dbInstance.get('SELECT COUNT(*) as total FROM user_sessions', [], (err, row) => {
+            resolve(err ? null : row);
+          });
+        });
+        total = countRow ? countRow.total : rows.length;
+      }
+    }
+    
+    console.log(`[Leaderboard] Fetched ${rows.length} user sessions (limit: ${limit >= 10000 ? 'all' : limit}), total: ${total}`);
+    
+    res.json({
+      leaderboard: rows.map((row, index) => ({
+        rank: index + 1,
+        sessionId: row.session_id,
+        comparisonsCount: parseInt(row.comparisons_count || 0),
+        lastActive: row.last_active
+      })),
+      total
+    });
+  } catch (error) {
+    console.error('Error fetching leaderboard:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch leaderboard', 
+      details: error.message 
     });
   }
 };
