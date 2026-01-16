@@ -534,7 +534,6 @@ const submitVote = (req, res) => {
                       comparisonCount
                     });
                   });
-                  });
                 }
               } else {
                 res.json({
