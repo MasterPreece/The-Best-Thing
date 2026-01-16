@@ -22,8 +22,14 @@ const TrendingItems = () => {
     fetchTrending();
   }, []);
 
-  if (loading || trending.length === 0) {
-    return null; // Don't show anything if loading or no trending items
+  // Show loading state or empty state
+  if (loading) {
+    return null; // Don't show anything while loading
+  }
+  
+  // Show empty state if no trending items (for better UX during development/testing)
+  if (trending.length === 0) {
+    return null; // No trending items - section won't show (items need to be compared in last 24 hours)
   }
 
   return (

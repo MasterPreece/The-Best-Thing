@@ -593,7 +593,7 @@ const getTrendingItems = (req, res) => {
     return;
   }
   
-  // SQLite version
+  // SQLite version - with fallback for missing categories
   dbInstance.all(`
     SELECT DISTINCT i.id, i.title, i.image_url, i.description, i.elo_rating,
            i.comparison_count, i.wins, i.losses,
@@ -609,8 +609,46 @@ const getTrendingItems = (req, res) => {
     LIMIT ?
   `, [limit], (err, rows) => {
     if (err) {
+      // If categories table/column doesn't exist, fallback to simple query
+      const errorStr = err.message || err.toString() || '';
+      if (errorStr.includes('no such table: categories') || 
+          errorStr.includes('no such column') || 
+          errorStr.includes('category_id') ||
+          (err.code === 'SQLITE_ERROR' && errorStr.includes('category'))) {
+        console.log('Categories not available for trending items, using simple query');
+        return dbInstance.all(`
+          SELECT DISTINCT i.id, i.title, i.image_url, i.description, i.elo_rating,
+                 i.comparison_count, i.wins, i.losses,
+                 COUNT(cmp.id) as recent_comparisons
+          FROM items i
+          LEFT JOIN comparisons cmp ON (cmp.item1_id = i.id OR cmp.item2_id = i.id)
+            AND datetime(cmp.created_at) >= datetime('now', '-24 hours')
+          GROUP BY i.id
+          HAVING COUNT(cmp.id) > 0
+          ORDER BY recent_comparisons DESC, i.elo_rating DESC
+          LIMIT ?
+        `, [limit], (fallbackErr, fallbackRows) => {
+          if (fallbackErr) {
+            console.error('Error fetching trending items:', fallbackErr);
+            return res.status(500).json({ error: 'Failed to fetch trending items', details: fallbackErr.message });
+          }
+          
+          // Calculate ranks for each item
+          const itemsWithRanks = (fallbackRows || []).map((item, index) => ({
+            ...item,
+            rank: index + 1,
+            trend: 'hot'
+          }));
+          
+          res.json({
+            trending: itemsWithRanks,
+            count: itemsWithRanks.length
+          });
+        });
+      }
+      
       console.error('Error fetching trending items:', err);
-      return res.status(500).json({ error: 'Failed to fetch trending items' });
+      return res.status(500).json({ error: 'Failed to fetch trending items', details: err.message });
     }
     
     // Calculate ranks for each item
