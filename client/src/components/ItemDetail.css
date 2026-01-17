@@ -79,6 +79,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
 }
 
 .item-detail-image {
@@ -101,13 +102,45 @@
   max-width: 400px;
   height: 400px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 15px;
   background: #f8f9fa;
   border: 2px dashed #dee2e6;
   border-radius: 10px;
   font-size: 18px;
   color: #6c757d;
+  position: relative;
+}
+
+.submit-photo-button {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  background: rgba(102, 126, 234, 0.9);
+  color: white;
+  border: none;
+  padding: 0.6rem 1.2rem;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 100;
+  pointer-events: auto;
+  transition: all 0.2s;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.submit-photo-button:hover {
+  background: rgba(102, 126, 234, 1);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.submit-photo-button:active {
+  transform: translateY(0);
 }
 
 .item-info-section {

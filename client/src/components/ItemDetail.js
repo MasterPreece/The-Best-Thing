@@ -3,18 +3,21 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { ItemDetailSkeleton } from './ItemDetailSkeleton';
+import PhotoSubmissionModal from './PhotoSubmissionModal';
 import './ItemDetail.css';
 
 const ItemDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, token } = useAuth();
   const [item, setItem] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
   const [commentLoading, setCommentLoading] = useState(false);
+  const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   useEffect(() => {
     const fetchItem = async () => {
@@ -24,6 +27,7 @@ const ItemDetail = () => {
       try {
         const response = await axios.get(`/api/items/${id}`);
         setItem(response.data);
+        setImageError(false); // Reset image error state when item changes
       } catch (error) {
         console.error('Error fetching item:', error);
         setError('Failed to load item details. Please try again.');
@@ -170,19 +174,39 @@ const ItemDetail = () => {
       <div className="item-detail-content">
         <div className="item-main">
           <div className="item-image-section">
-            {item.image_url ? (
-              <img
-                src={item.image_url}
-                alt={item.title}
-                className="item-detail-image"
-                loading="lazy"
-                onError={(e) => {
-                  e.target.src = 'https://via.placeholder.com/400x400?text=No+Image';
-                }}
-              />
+            {item.image_url && !imageError ? (
+              <>
+                <img
+                  src={item.image_url}
+                  alt={item.title}
+                  className="item-detail-image"
+                  loading="lazy"
+                  onError={(e) => {
+                    e.target.src = 'https://via.placeholder.com/400x400?text=No+Image';
+                    setImageError(true);
+                  }}
+                />
+                <button
+                  type="button"
+                  className="submit-photo-button"
+                  onClick={() => setShowPhotoModal(true)}
+                  title="Submit a photo for this item"
+                  style={{ display: imageError ? 'block' : 'none' }}
+                >
+                  📷 Submit Photo
+                </button>
+              </>
             ) : (
               <div className="item-image-placeholder">
                 📷 No Image Available
+                <button
+                  type="button"
+                  className="submit-photo-button"
+                  onClick={() => setShowPhotoModal(true)}
+                  title="Submit a photo for this item"
+                >
+                  📷 Submit Photo
+                </button>
               </div>
             )}
           </div>
@@ -364,6 +388,20 @@ const ItemDetail = () => {
           </div>
         </div>
       </div>
+
+      {showPhotoModal && item && (
+        <PhotoSubmissionModal
+          item={item}
+          onClose={() => setShowPhotoModal(false)}
+          onSuccess={() => {
+            // Optionally refresh the item to show the new image if approved quickly
+            setShowPhotoModal(false);
+            alert('Photo submitted! It will be reviewed by an admin.');
+          }}
+          userSessionId={localStorage.getItem('userSessionId')}
+          token={token}
+        />
+      )}
     </div>
   );
 };
