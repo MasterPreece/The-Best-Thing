@@ -81,6 +81,7 @@ router.post('/admin/login', adminLogin);
 router.post('/admin/seed-categories', adminAuth, adminController.triggerSeedCategories);
 router.post('/admin/seed-top2000', adminAuth, adminController.triggerSeedTop2000);
 router.post('/admin/update-images', adminAuth, adminController.triggerUpdateImages);
+router.post('/admin/assign-categories', adminAuth, adminController.triggerAssignCategories);
 router.get('/admin/items', adminAuth, adminController.getAdminItems);
 router.post('/admin/items', adminAuth, adminController.createItem);
 router.put('/admin/items/:id', adminAuth, adminController.updateItem);

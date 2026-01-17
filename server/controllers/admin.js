@@ -1,6 +1,7 @@
 const db = require('../database');
 const seedCategoriesFunction = require('../scripts/seed-categories-wrapper');
 const seedTop2000Function = require('../scripts/seed-top-2000-wrapper');
+const { assignDefaultCategories } = require('../scripts/assign-default-categories');
 const { updateMissingImages } = require('../scripts/update-missing-images');
 
 /**
