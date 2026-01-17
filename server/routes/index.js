@@ -102,5 +102,33 @@ router.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'API is running' });
 });
 
+// Debug endpoint to check user sessions
+router.get('/debug/user-sessions', (req, res) => {
+  const db = require('../database');
+  const dbType = db.getDbType();
+  const dbInstance = db.getDb();
+  
+  if (dbType === 'postgres') {
+    db.query('SELECT COUNT(*) as count FROM user_sessions').then(result => {
+      res.json({
+        totalSessions: result.rows[0]?.count || 0,
+        message: 'Check /api/debug/user-sessions to see user session count'
+      });
+    }).catch(err => {
+      res.status(500).json({ error: err.message });
+    });
+  } else {
+    dbInstance.get('SELECT COUNT(*) as count FROM user_sessions', [], (err, row) => {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      res.json({
+        totalSessions: row ? row.count : 0,
+        message: 'Check /api/debug/user-sessions to see user session count'
+      });
+    });
+  }
+});
+
 module.exports = router;
 
