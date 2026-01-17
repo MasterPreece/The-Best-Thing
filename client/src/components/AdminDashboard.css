@@ -131,6 +131,15 @@
   box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4);
 }
 
+.item-submissions-button {
+  background: linear-gradient(135deg, #28a745 0%, #1e7e34 100%); /* Green gradient */
+}
+
+.item-submissions-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
+}
+
 .add-button:hover,
 .bulk-import-button:hover,
 .seed-top2000-button:hover,
