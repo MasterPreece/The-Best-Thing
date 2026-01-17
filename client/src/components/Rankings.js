@@ -18,7 +18,6 @@ const Rankings = () => {
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [showItemModal, setShowItemModal] = useState(false);
-  const { user } = useAuth();
 
   const fetchCategories = useCallback(async () => {
     try {
