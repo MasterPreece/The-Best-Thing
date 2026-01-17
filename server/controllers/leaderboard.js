@@ -16,41 +16,111 @@ const getLeaderboard = async (req, res) => {
     let total = 0;
     
     if (dbType === 'postgres') {
-      // PostgreSQL: Use async/await with db.query()
+      // PostgreSQL: Combine user_sessions (anonymous) and users (logged-in)
+      // Use UNION ALL to combine both, then order by comparisons_count
       if (limit >= 10000) {
-        // Get all
+        // Get all - combine anonymous sessions and logged-in users
         const result = await db.query(`
-          SELECT session_id, comparisons_count, last_active
+          SELECT 
+            COALESCE(session_id, username) as identifier,
+            session_id,
+            username,
+            comparisons_count, 
+            last_active,
+            'anonymous' as user_type
           FROM user_sessions
+          WHERE comparisons_count > 0
+          
+          UNION ALL
+          
+          SELECT 
+            username as identifier,
+            NULL as session_id,
+            username,
+            comparisons_count,
+            last_active,
+            'registered' as user_type
+          FROM users
+          WHERE comparisons_count > 0
+          
           ORDER BY comparisons_count DESC
         `);
         rows = result.rows || [];
         
-        // Get total count
-        const countResult = await db.query('SELECT COUNT(*) as total FROM user_sessions');
+        // Get total count (combined)
+        const countResult = await db.query(`
+          SELECT 
+            (SELECT COUNT(*) FROM user_sessions WHERE comparisons_count > 0) +
+            (SELECT COUNT(*) FROM users WHERE comparisons_count > 0) as total
+        `);
         total = parseInt(countResult.rows[0]?.total || 0);
       } else {
-        // Get with limit
+        // Get with limit - combine and limit the combined result
         const result = await db.query(`
-          SELECT session_id, comparisons_count, last_active
-          FROM user_sessions
+          SELECT * FROM (
+            SELECT 
+              COALESCE(session_id, username) as identifier,
+              session_id,
+              username,
+              comparisons_count, 
+              last_active,
+              'anonymous' as user_type
+            FROM user_sessions
+            WHERE comparisons_count > 0
+            
+            UNION ALL
+            
+            SELECT 
+              username as identifier,
+              NULL as session_id,
+              username,
+              comparisons_count,
+              last_active,
+              'registered' as user_type
+            FROM users
+            WHERE comparisons_count > 0
+          ) combined
           ORDER BY comparisons_count DESC
           LIMIT $1
         `, [limit]);
         rows = result.rows || [];
         
-        // Get total count
-        const countResult = await db.query('SELECT COUNT(*) as total FROM user_sessions');
+        // Get total count (combined)
+        const countResult = await db.query(`
+          SELECT 
+            (SELECT COUNT(*) FROM user_sessions WHERE comparisons_count > 0) +
+            (SELECT COUNT(*) FROM users WHERE comparisons_count > 0) as total
+        `);
         total = parseInt(countResult.rows[0]?.total || 0);
       }
     } else {
-      // SQLite: Use callback-style
+      // SQLite: Combine user_sessions and users
       if (limit >= 10000) {
         // Get all
         rows = await new Promise((resolve, reject) => {
           dbInstance.all(`
-            SELECT session_id, comparisons_count, last_active
+            SELECT 
+              COALESCE(session_id, username) as identifier,
+              session_id,
+              username,
+              comparisons_count, 
+              last_active,
+              'anonymous' as user_type
             FROM user_sessions
+            WHERE comparisons_count > 0
+            
+            UNION ALL
+            
+            SELECT 
+              username as identifier,
+              NULL as session_id,
+              username,
+              comparisons_count,
+              last_active,
+              'registered' as user_type
+            FROM users
+            WHERE comparisons_count > 0
+            
             ORDER BY comparisons_count DESC
           `, [], (err, resultRows) => {
             if (err) reject(err);
@@ -60,7 +130,11 @@ const getLeaderboard = async (req, res) => {
         
         // Get total count
         const countRow = await new Promise((resolve) => {
-          dbInstance.get('SELECT COUNT(*) as total FROM user_sessions', [], (err, row) => {
+          dbInstance.get(`
+            SELECT 
+              (SELECT COUNT(*) FROM user_sessions WHERE comparisons_count > 0) +
+              (SELECT COUNT(*) FROM users WHERE comparisons_count > 0) as total
+          `, [], (err, row) => {
             resolve(err ? null : row);
           });
         });
@@ -69,8 +143,29 @@ const getLeaderboard = async (req, res) => {
         // Get with limit
         rows = await new Promise((resolve, reject) => {
           dbInstance.all(`
-            SELECT session_id, comparisons_count, last_active
-            FROM user_sessions
+            SELECT * FROM (
+              SELECT 
+                COALESCE(session_id, username) as identifier,
+                session_id,
+                username,
+                comparisons_count, 
+                last_active,
+                'anonymous' as user_type
+              FROM user_sessions
+              WHERE comparisons_count > 0
+              
+              UNION ALL
+              
+              SELECT 
+                username as identifier,
+                NULL as session_id,
+                username,
+                comparisons_count,
+                last_active,
+                'registered' as user_type
+              FROM users
+              WHERE comparisons_count > 0
+            )
             ORDER BY comparisons_count DESC
             LIMIT ?
           `, [limit], (err, resultRows) => {
@@ -81,7 +176,11 @@ const getLeaderboard = async (req, res) => {
         
         // Get total count
         const countRow = await new Promise((resolve) => {
-          dbInstance.get('SELECT COUNT(*) as total FROM user_sessions', [], (err, row) => {
+          dbInstance.get(`
+            SELECT 
+              (SELECT COUNT(*) FROM user_sessions WHERE comparisons_count > 0) +
+              (SELECT COUNT(*) FROM users WHERE comparisons_count > 0) as total
+          `, [], (err, row) => {
             resolve(err ? null : row);
           });
         });
@@ -89,12 +188,15 @@ const getLeaderboard = async (req, res) => {
       }
     }
     
-    console.log(`[Leaderboard] Fetched ${rows.length} user sessions (limit: ${limit >= 10000 ? 'all' : limit}), total: ${total}`);
+    console.log(`[Leaderboard] Fetched ${rows.length} users/sessions (limit: ${limit >= 10000 ? 'all' : limit}), total: ${total}`);
     
     res.json({
       leaderboard: rows.map((row, index) => ({
         rank: index + 1,
-        sessionId: row.session_id,
+        identifier: row.identifier || row.session_id || row.username,
+        username: row.username || null,
+        sessionId: row.session_id || null,
+        userType: row.user_type || (row.username ? 'registered' : 'anonymous'),
         comparisonsCount: parseInt(row.comparisons_count || 0),
         lastActive: row.last_active
       })),

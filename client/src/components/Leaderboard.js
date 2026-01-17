@@ -94,7 +94,7 @@ const Leaderboard = () => {
         ) : (
           leaderboard.map((user) => (
             <div
-              key={user.sessionId}
+              key={user.identifier || user.sessionId || user.username}
               className={`leaderboard-item ${user.rank <= 3 ? 'top-three' : ''}`}
             >
               <div className="leaderboard-rank">
@@ -102,9 +102,18 @@ const Leaderboard = () => {
               </div>
               <div className="leaderboard-user">
                 <div className="user-id">
-                  {user.sessionId.length > 20
-                    ? user.sessionId.substring(0, 20) + '...'
-                    : user.sessionId}
+                  {user.username ? (
+                    <span>
+                      👤 {user.username}
+                      <span className="user-type-badge">Registered</span>
+                    </span>
+                  ) : (
+                    <span>
+                      🎲 {(user.sessionId || user.identifier || 'Anonymous').substring(0, 20)}
+                      {user.sessionId && user.sessionId.length > 20 ? '...' : ''}
+                      <span className="user-type-badge">Anonymous</span>
+                    </span>
+                  )}
                 </div>
                 <div className="user-stats">
                   <span className="stat-badge">
