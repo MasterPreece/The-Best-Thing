@@ -10,6 +10,7 @@ const collectionsController = require('../controllers/collections');
 const adminController = require('../controllers/admin');
 const bulkImportController = require('../controllers/bulk-import');
 const categoriesController = require('../controllers/categories');
+const photoSubmissionsController = require('../controllers/photo-submissions');
 const { adminAuth, adminLogin } = require('../utils/admin-auth');
 const { authenticate, optionalAuthenticate } = require('../utils/auth');
 const multer = require('multer');
