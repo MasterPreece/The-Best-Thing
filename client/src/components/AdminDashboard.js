@@ -570,6 +570,10 @@ const BulkImportModal = ({ onClose, onSuccess, api }) => {
 // Seed Top 2000 Modal
 const SeedTop2000Modal = ({ onClose, onSuccess, api }) => {
   const [count, setCount] = useState('2000');
+  const [category, setCategory] = useState('');
+  const [startRank, setStartRank] = useState('');
+  const [endRank, setEndRank] = useState('');
+  const [useRange, setUseRange] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -579,21 +583,54 @@ const SeedTop2000Modal = ({ onClose, onSuccess, api }) => {
     setError('');
     setSuccess(false);
     
-    // Validate count
-    const parsedCount = parseInt(count);
-    if (!count || isNaN(parsedCount) || parsedCount <= 0) {
-      setError('Please enter a valid number greater than 0');
-      return;
+    const body = {};
+    
+    // Validate range if using range mode
+    if (useRange) {
+      const parsedStart = parseInt(startRank);
+      const parsedEnd = parseInt(endRank);
+      
+      if (!startRank || !endRank || isNaN(parsedStart) || isNaN(parsedEnd)) {
+        setError('Please enter valid start and end ranks');
+        return;
+      }
+      
+      if (parsedStart < 1) {
+        setError('Start rank must be >= 1');
+        return;
+      }
+      
+      if (parsedEnd < parsedStart) {
+        setError('End rank must be >= start rank');
+        return;
+      }
+      
+      body.startRank = parsedStart;
+      body.endRank = parsedEnd;
+    } else {
+      // Validate count
+      const parsedCount = parseInt(count);
+      if (!count || isNaN(parsedCount) || parsedCount <= 0) {
+        setError('Please enter a valid number greater than 0');
+        return;
+      }
+      if (parsedCount > 10000) {
+        setError('Count cannot exceed 10,000 (to respect API limits)');
+        return;
+      }
+      
+      body.count = parsedCount;
     }
-    if (parsedCount > 10000) {
-      setError('Count cannot exceed 10,000 (to respect API limits)');
-      return;
+    
+    // Add category if specified
+    if (category && category.trim()) {
+      body.category = category.trim();
     }
     
     setLoading(true);
 
     try {
-      await api.post('/api/admin/seed-top2000', { count: parsedCount });
+      await api.post('/api/admin/seed-top2000', body);
 
       setSuccess(true);
     } catch (err) {
@@ -669,25 +706,101 @@ const SeedTop2000Modal = ({ onClose, onSuccess, api }) => {
 
         <form onSubmit={handleSubmit}>
           <div className="seed-top2000-info">
-            <p>Seed your database with the <strong>top most popular Wikipedia articles</strong> based on actual pageviews.</p>
+            <p>Seed your database with <strong>popular Wikipedia articles</strong> based on actual pageviews.</p>
+            
+            <div className="form-group">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={useRange}
+                  onChange={(e) => setUseRange(e.target.checked)}
+                  disabled={loading}
+                />
+                <span>Use rank range (e.g., 2000-3000) instead of top N</span>
+              </label>
+              <small className="field-hint">
+                {useRange 
+                  ? 'Select articles by their rank position (useful for avoiding duplicates)'
+                  : 'Select top N most popular articles'}
+              </small>
+            </div>
+            
+            {useRange ? (
+              <>
+                <div className="form-group">
+                  <label>
+                    Start Rank *
+                    <span className="field-hint"> - Starting position (1-based)</span>
+                  </label>
+                  <input
+                    type="number"
+                    value={startRank}
+                    onChange={(e) => setStartRank(e.target.value)}
+                    placeholder="2000"
+                    min="1"
+                    required
+                    disabled={loading}
+                  />
+                  <small className="field-hint">
+                    First rank position to include (e.g., 2000 means the 2000th most viewed article)
+                  </small>
+                </div>
+                
+                <div className="form-group">
+                  <label>
+                    End Rank *
+                    <span className="field-hint"> - Ending position (inclusive)</span>
+                  </label>
+                  <input
+                    type="number"
+                    value={endRank}
+                    onChange={(e) => setEndRank(e.target.value)}
+                    placeholder="3000"
+                    min="1"
+                    required
+                    disabled={loading}
+                  />
+                  <small className="field-hint">
+                    Last rank position to include (e.g., 3000 means up to and including the 3000th article)
+                  </small>
+                </div>
+              </>
+            ) : (
+              <div className="form-group">
+                <label>
+                  Number of Articles *
+                  <span className="field-hint"> - How many top articles to add</span>
+                </label>
+                <input
+                  type="number"
+                  value={count}
+                  onChange={(e) => setCount(e.target.value)}
+                  placeholder="2000"
+                  min="1"
+                  max="10000"
+                  required
+                  disabled={loading}
+                />
+                <small className="field-hint">
+                  Recommended: 2000 for a comprehensive start. You can trigger this multiple times to add more articles over time.
+                </small>
+              </div>
+            )}
             
             <div className="form-group">
               <label>
-                Number of Articles *
-                <span className="field-hint"> - How many top articles to add</span>
+                Category (Optional)
+                <span className="field-hint"> - Filter by Wikipedia category</span>
               </label>
               <input
-                type="number"
-                value={count}
-                onChange={(e) => setCount(e.target.value)}
-                placeholder="2000"
-                min="1"
-                max="10000"
-                required
+                type="text"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                placeholder="e.g., Films, Video games, Countries, or Category:Films"
                 disabled={loading}
               />
               <small className="field-hint">
-                Recommended: 2000 for a comprehensive start. You can trigger this multiple times to add more articles over time.
+                Enter a Wikipedia category name (e.g., "Films" or "Category:Films"). Leave empty to gather from all sources.
               </small>
             </div>
             

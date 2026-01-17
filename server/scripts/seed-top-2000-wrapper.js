@@ -5,5 +5,8 @@
 
 const { seedTopArticles } = require('./seed-top-2000');
 
-module.exports = seedTopArticles;
+// Export function that accepts parameters
+module.exports = (targetCount, category, startRank, endRank) => {
+  return seedTopArticles(targetCount, category, startRank, endRank);
+};
 

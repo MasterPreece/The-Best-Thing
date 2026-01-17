@@ -45,29 +45,59 @@ const triggerSeedCategories = async (req, res) => {
 /**
  * Trigger top 2000 seeding
  * POST /api/admin/seed-top2000
- * Body: { count?: number }
+ * Body: { count?: number, category?: string, startRank?: number, endRank?: number }
  */
 const triggerSeedTop2000 = async (req, res) => {
   try {
-    const { count } = req.body;
-    const targetCount = count ? parseInt(count) : 2000;
+    const { count, category, startRank, endRank } = req.body;
     
-    // Validate count
-    if (targetCount <= 0 || targetCount > 10000) {
+    // Determine effective count
+    let targetCount = count ? parseInt(count) : 2000;
+    let effectiveCount = targetCount;
+    
+    // If range is specified, use range size instead
+    if (startRank && endRank) {
+      const parsedStart = parseInt(startRank);
+      const parsedEnd = parseInt(endRank);
+      
+      if (isNaN(parsedStart) || isNaN(parsedEnd) || parsedStart < 1 || parsedEnd < parsedStart) {
+        return res.status(400).json({
+          error: 'Invalid range',
+          message: 'Start rank must be >= 1 and end rank must be >= start rank'
+        });
+      }
+      
+      effectiveCount = parsedEnd - parsedStart + 1;
+    } else if (targetCount <= 0 || targetCount > 10000) {
       return res.status(400).json({
         error: 'Invalid count',
         message: 'Count must be between 1 and 10,000'
       });
     }
     
+    // Validate category format if provided (should start with "Category:")
+    let validCategory = null;
+    if (category && category.trim()) {
+      validCategory = category.trim();
+      if (!validCategory.startsWith('Category:')) {
+        validCategory = `Category:${validCategory}`;
+      }
+    }
+    
+    const rangeDesc = (startRank && endRank) ? `ranked ${startRank}-${endRank}` : `top ${targetCount}`;
+    const categoryDesc = validCategory ? ` from ${validCategory}` : '';
+    
     // Run seeding in background (don't block the response)
     res.json({ 
-      message: `Top ${targetCount} articles seeding started. This will take approximately ${Math.round(targetCount / 120)}-${Math.round(targetCount / 80)} minutes.`,
-      note: 'Check logs to monitor progress. This will gather articles from multiple sources and sort by pageviews.'
+      message: `${rangeDesc} articles seeding started${categoryDesc}. This will take approximately ${Math.round(effectiveCount / 120)}-${Math.round(effectiveCount / 80)} minutes.`,
+      note: 'Check logs to monitor progress. Articles will be sorted by pageviews.'
     });
     
-    // Run seeding asynchronously with custom count
-    seedTop2000Function(targetCount).catch(err => {
+    // Run seeding asynchronously with parameters
+    const parsedStartRank = startRank ? parseInt(startRank) : null;
+    const parsedEndRank = endRank ? parseInt(endRank) : null;
+    
+    seedTop2000Function(targetCount, validCategory, parsedStartRank, parsedEndRank).catch(err => {
       console.error('Error during admin-triggered top 2000 seeding:', err);
     });
     

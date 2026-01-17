@@ -25,11 +25,65 @@ const TARGET_COUNT = parseInt(process.argv[2]) || 2000;
 
 /**
  * Get articles from multiple high-quality sources
+ * @param {number} targetCount - Target number of articles to gather
+ * @param {string} category - Optional Wikipedia category to filter by (e.g., 'Category:Films')
  */
-async function gatherTopArticles(targetCount = TARGET_COUNT) {
-  console.log(`\n🔍 Gathering articles from multiple sources to find top ${targetCount}...\n`);
+async function gatherTopArticles(targetCount = TARGET_COUNT, category = null) {
+  const sourceDesc = category ? `from category "${category}"` : 'from multiple sources';
+  console.log(`\n🔍 Gathering articles ${sourceDesc} to find top ${targetCount}...\n`);
   
   const allArticles = new Set();
+  
+  // If category is specified, only gather from that category
+  if (category) {
+    console.log(`🏷️  Getting articles from ${category}...`);
+    try {
+      let continueToken = null;
+      let fetched = 0;
+      const gatherTarget = targetCount * 3; // Get more to ensure enough for sorting
+      
+      while (fetched < gatherTarget) {
+        const params = {
+          action: 'query',
+          format: 'json',
+          list: 'categorymembers',
+          cmtitle: category,
+          cmnamespace: 0,
+          cmlimit: 500,
+          cmtype: 'page',
+          redirects: 1
+        };
+        
+        if (continueToken) {
+          params.cmcontinue = continueToken;
+        }
+        
+        const response = await axios.get(WIKIPEDIA_API, {
+          params,
+          headers: {
+            'User-Agent': 'TheBestThing/1.0 (https://github.com/MasterPreece/The-Best-Thing; contact@example.com)'
+          }
+        });
+        
+        const members = response.data.query?.categorymembers || [];
+        members.forEach(m => allArticles.add(m.title));
+        fetched += members.length;
+        
+        console.log(`   ✓ Added ${members.length} from ${category} (${allArticles.size} total)`);
+        
+        continueToken = response.data.continue?.cmcontinue;
+        if (!continueToken) break;
+        
+        await new Promise(resolve => setTimeout(resolve, API_DELAY));
+      }
+      
+      console.log(`\n✅ Gathered ${allArticles.size} unique articles from ${category}\n`);
+      return Array.from(allArticles);
+    } catch (err) {
+      console.error(`   ✗ Error fetching from ${category}:`, err.message);
+      return [];
+    }
+  }
   
   // Source 1: Most viewed articles (get max allowed)
   console.log('📊 Getting most viewed articles...');
@@ -237,10 +291,15 @@ async function getArticlePageviews(articleTitle) {
 }
 
 /**
- * Sort articles by pageviews and return top N
+ * Sort articles by pageviews and return top N (or range if specified)
+ * @param {string[]} articleTitles - Array of article titles
+ * @param {number} targetCount - Target number of articles
+ * @param {number} startRank - Optional starting rank (1-based, inclusive)
+ * @param {number} endRank - Optional ending rank (1-based, inclusive)
  */
-async function sortByPageviews(articleTitles, targetCount = TARGET_COUNT) {
-  console.log(`📈 Getting pageview data for ${articleTitles.length} articles to find top ${targetCount}...\n`);
+async function sortByPageviews(articleTitles, targetCount = TARGET_COUNT, startRank = null, endRank = null) {
+  const rangeDesc = startRank && endRank ? `ranked ${startRank}-${endRank}` : `top ${targetCount}`;
+  console.log(`📈 Getting pageview data for ${articleTitles.length} articles to find ${rangeDesc}...\n`);
   
   const articlesWithViews = [];
   const batchSize = 20; // Process 20 at a time to balance speed and rate limits
@@ -276,29 +335,55 @@ async function sortByPageviews(articleTitles, targetCount = TARGET_COUNT) {
     }
   }
   
-  // Sort by pageviews (highest first) and take top N
+  // Sort by pageviews (highest first)
   articlesWithViews.sort((a, b) => b.views - a.views);
   
-  console.log(`\n✅ Top 10 articles by pageviews:`);
-  articlesWithViews.slice(0, 10).forEach((item, idx) => {
-    console.log(`   ${idx + 1}. ${item.title}: ${item.views.toLocaleString()} views`);
-  });
+  // If range is specified, take that range instead of top N
+  let selectedArticles;
+  if (startRank && endRank) {
+    // Convert to 0-based index (startRank is 1-based)
+    const startIdx = Math.max(0, startRank - 1);
+    const endIdx = Math.min(articlesWithViews.length, endRank);
+    
+    if (startIdx >= articlesWithViews.length) {
+      console.log(`\n⚠️  Warning: Start rank ${startRank} exceeds available articles (${articlesWithViews.length}). Returning empty array.\n`);
+      return [];
+    }
+    
+    selectedArticles = articlesWithViews.slice(startIdx, endIdx);
+    console.log(`\n✅ Articles ranked ${startRank}-${endRank} by pageviews (showing first 5):`);
+    selectedArticles.slice(0, 5).forEach((item, idx) => {
+      const actualRank = startIdx + idx + 1;
+      console.log(`   ${actualRank}. ${item.title}: ${item.views.toLocaleString()} views`);
+    });
+  } else {
+    selectedArticles = articlesWithViews.slice(0, targetCount);
+    console.log(`\n✅ Top 10 articles by pageviews:`);
+    selectedArticles.slice(0, 10).forEach((item, idx) => {
+      console.log(`   ${idx + 1}. ${item.title}: ${item.views.toLocaleString()} views`);
+    });
+  }
   
-  return articlesWithViews
-    .slice(0, targetCount)
-    .map(item => item.title)
-    .filter(Boolean);
+  return selectedArticles.map(item => item.title).filter(Boolean);
 }
 
 /**
  * Main seeding function
+ * @param {number} targetCount - Target number of articles (ignored if range is specified)
+ * @param {string} category - Optional Wikipedia category to filter by
+ * @param {number} startRank - Optional starting rank (1-based, for range selection)
+ * @param {number} endRank - Optional ending rank (1-based, for range selection)
  */
-async function seedTopArticles(targetCount = TARGET_COUNT) {
-  // Ensure we have a valid count
-  const targetArticleCount = targetCount || TARGET_COUNT;
+async function seedTopArticles(targetCount = TARGET_COUNT, category = null, startRank = null, endRank = null) {
+  // Ensure we have a valid count (use range size if range is specified)
+  const effectiveCount = (startRank && endRank) ? (endRank - startRank + 1) : (targetCount || TARGET_COUNT);
+  const targetArticleCount = effectiveCount;
   const estimatedMinutes = Math.round(targetArticleCount / 100);
   
-  console.log(`\n🚀 Starting to seed top ${targetArticleCount} Wikipedia articles`);
+  const rangeDesc = (startRank && endRank) ? `ranked ${startRank}-${endRank}` : `top ${targetArticleCount}`;
+  const categoryDesc = category ? ` from ${category}` : '';
+  
+  console.log(`\n🚀 Starting to seed ${rangeDesc} Wikipedia articles${categoryDesc}`);
   console.log(`⏱️  Estimated time: ~${estimatedMinutes}-${Math.round(estimatedMinutes * 1.2)} minutes (respecting rate limits)\n`);
   
   const startTime = Date.now();
@@ -325,16 +410,16 @@ async function seedTopArticles(targetCount = TARGET_COUNT) {
   
   console.log(`📊 Current database has ${currentCount} items\n`);
   
-  // Step 1: Gather articles from multiple sources
-  const allArticleTitles = await gatherTopArticles(targetCount);
+  // Step 1: Gather articles from multiple sources (or specific category)
+  const allArticleTitles = await gatherTopArticles(targetCount, category);
   
   if (allArticleTitles.length === 0) {
     console.error('❌ No articles gathered.');
     throw new Error('No articles gathered');
   }
   
-  // Step 2: Sort by pageviews and get top N
-  const topArticles = await sortByPageviews(allArticleTitles, targetCount);
+  // Step 2: Sort by pageviews and get top N (or range)
+  const topArticles = await sortByPageviews(allArticleTitles, targetCount, startRank, endRank);
   
   console.log(`\n📋 Processing top ${topArticles.length} articles...\n`);
   
