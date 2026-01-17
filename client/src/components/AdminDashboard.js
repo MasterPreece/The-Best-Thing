@@ -1190,5 +1190,158 @@ const ItemModal = ({ item, onClose, onSave, api }) => {
   );
 };
 
+// Photo Submissions Panel
+const PhotoSubmissionsPanel = ({ onClose, onApprove, api }) => {
+  const [submissions, setSubmissions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
+  const [toast, setToast] = useState(null);
+  const limit = 20;
+
+  const showToast = (message, type) => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const fetchSubmissions = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await api.get(`/api/admin/photo-submissions?status=pending&limit=${limit}&offset=${(page - 1) * limit}`);
+      setSubmissions(response.data.submissions || []);
+      setPagination(response.data.pagination || {});
+      setError('');
+    } catch (err) {
+      console.error('Error fetching photo submissions:', err);
+      if (err.response?.status === 401) {
+        onClose();
+        window.location.reload();
+      } else {
+        setError(err.response?.data?.error || 'Failed to load photo submissions');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [api, page, limit, onClose]);
+
+  useEffect(() => {
+    fetchSubmissions();
+  }, [fetchSubmissions]);
+
+  const handleApprove = async (submissionId) => {
+    try {
+      await api.post(`/api/admin/photo-submissions/${submissionId}/approve`);
+      showToast('Photo approved!', 'success');
+      fetchSubmissions();
+      onApprove();
+    } catch (err) {
+      console.error('Error approving photo:', err);
+      alert('Failed to approve photo: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const handleReject = async (submissionId) => {
+    if (!window.confirm('Are you sure you want to reject this photo submission?')) {
+      return;
+    }
+    try {
+      await api.post(`/api/admin/photo-submissions/${submissionId}/reject`);
+      showToast('Photo rejected', 'info');
+      fetchSubmissions();
+    } catch (err) {
+      console.error('Error rejecting photo:', err);
+      alert('Failed to reject photo: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  return (
+    <div className="photo-submissions-panel-overlay" onClick={onClose}>
+      <div className="photo-submissions-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="photo-submissions-header">
+          <h2>📷 Photo Submissions</h2>
+          <button className="close-button" onClick={onClose}>×</button>
+        </div>
+
+        {toast && (
+          <div className={`toast toast-${toast.type}`}>
+            {toast.message}
+          </div>
+        )}
+
+        {error && <div className="error-banner">{error}</div>}
+
+        {loading ? (
+          <div className="loading">Loading submissions...</div>
+        ) : submissions.length === 0 ? (
+          <div className="no-submissions">
+            <p>No pending photo submissions</p>
+          </div>
+        ) : (
+          <>
+            <div className="submissions-list">
+              {submissions.map((submission) => (
+                <div key={submission.id} className="submission-item">
+                  <div className="submission-images">
+                    <div className="submission-image-group">
+                      <label>Current Image</label>
+                      <div className="image-preview">
+                        {submission.current_image_url ? (
+                          <img src={submission.current_image_url} alt="Current" />
+                        ) : (
+                          <div className="no-image">No image</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="submission-image-group">
+                      <label>Submitted Image</label>
+                      <div className="image-preview">
+                        <img src={submission.image_url} alt="Submitted" onError={(e) => {
+                          e.target.parentElement.innerHTML = '<div class="no-image">Invalid image URL</div>';
+                        }} />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="submission-info">
+                    <h3>{submission.item_title}</h3>
+                    <p><strong>Submitted by:</strong> {submission.submitter_username || `Anonymous (${submission.user_session_id?.substring(0, 20)}...)`}</p>
+                    <p><strong>Submitted:</strong> {new Date(submission.submitted_at).toLocaleString()}</p>
+                  </div>
+                  <div className="submission-actions">
+                    <button
+                      className="approve-button"
+                      onClick={() => handleApprove(submission.id)}
+                    >
+                      ✅ Approve
+                    </button>
+                    <button
+                      className="reject-button"
+                      onClick={() => handleReject(submission.id)}
+                    >
+                      ❌ Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {pagination.totalPages > 1 && (
+              <div className="pagination">
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                  Previous
+                </button>
+                <span>Page {page} of {pagination.totalPages} ({pagination.total} total)</span>
+                <button onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))} disabled={page >= pagination.totalPages}>
+                  Next
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export default AdminDashboard;
 
