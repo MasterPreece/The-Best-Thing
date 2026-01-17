@@ -129,9 +129,7 @@ const Rankings = () => {
 
   return (
     <div className="rankings-container">
-      <div className="rankings-content-wrapper">
-        <div className="rankings-main-content">
-          <div className="rankings-header">
+      <div className="rankings-header">
         <div className="header-top-row">
           <div>
             <h1>🏆 The Best Things Ranking</h1>
@@ -223,7 +221,9 @@ const Rankings = () => {
         </div>
       )}
 
-      <div className="rankings-list">
+      <div className="rankings-content-wrapper">
+        <div className="rankings-main-content">
+          <div className="rankings-list">
         {isSearching ? (
           <div className="loading-state">
             <div className="loading-spinner"></div>
@@ -288,6 +288,9 @@ const Rankings = () => {
             </Link>
           ))
         )}
+          </div>
+        </div>
+        <RisingFallingSidebar />
       </div>
 
       {showItemModal && (
@@ -300,9 +303,6 @@ const Rankings = () => {
           userSessionId={userSessionId}
         />
       )}
-        </div>
-        <RisingFallingSidebar />
-      </div>
     </div>
   );
 };
