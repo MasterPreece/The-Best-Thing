@@ -89,6 +89,21 @@
   margin-bottom: 0.5rem;
   color: #333;
   word-break: break-all;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.user-type-badge {
+  display: inline-block;
+  background: rgba(102, 126, 234, 0.2);
+  color: #667eea;
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-left: 0.5rem;
 }
 
 .user-stats {
