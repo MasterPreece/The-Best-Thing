@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { RankingSkeleton } from './SkeletonLoader';
 import ItemSubmissionModal from './ItemSubmissionModal';
+import RisingFallingSidebar from './RisingFallingSidebar';
 import './Rankings.css';
 
 const Rankings = () => {
@@ -128,7 +129,9 @@ const Rankings = () => {
 
   return (
     <div className="rankings-container">
-      <div className="rankings-header">
+      <div className="rankings-content-wrapper">
+        <div className="rankings-main-content">
+          <div className="rankings-header">
         <div className="header-top-row">
           <div>
             <h1>🏆 The Best Things Ranking</h1>
@@ -297,6 +300,9 @@ const Rankings = () => {
           userSessionId={userSessionId}
         />
       )}
+        </div>
+        <RisingFallingSidebar />
+      </div>
     </div>
   );
 };

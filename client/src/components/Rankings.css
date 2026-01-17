@@ -3,6 +3,19 @@
   color: white;
 }
 
+.rankings-content-wrapper {
+  display: flex;
+  align-items: flex-start;
+  gap: 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.rankings-main-content {
+  flex: 1;
+  min-width: 0;
+}
+
 .rankings-header {
   text-align: center;
   margin-bottom: 3rem;

@@ -665,9 +665,130 @@ const getTrendingItems = (req, res) => {
   });
 };
 
+/**
+ * Get rising and falling items
+ * Items with recent wins (rising) vs recent losses (falling)
+ */
+const getRisingFalling = (req, res) => {
+  const limit = parseInt(req.query.limit) || 3;
+  const dbInstance = db.getDb();
+  const dbType = db.getDbType();
+  
+  if (dbType === 'postgres') {
+    // Get items with recent wins (rising)
+    const risingQuery = `
+      SELECT DISTINCT i.id, i.title, i.image_url, i.description, i.elo_rating,
+             i.comparison_count, i.wins, i.losses,
+             COUNT(CASE WHEN (cmp.item1_id = i.id AND cmp.winner_id = i.id) 
+                       OR (cmp.item2_id = i.id AND cmp.winner_id = i.id) 
+                  THEN 1 END) as recent_wins
+      FROM items i
+      LEFT JOIN comparisons cmp ON (cmp.item1_id = i.id OR cmp.item2_id = i.id)
+        AND cmp.created_at >= NOW() - INTERVAL '24 hours'
+      GROUP BY i.id
+      HAVING COUNT(CASE WHEN (cmp.item1_id = i.id AND cmp.winner_id = i.id) 
+                           OR (cmp.item2_id = i.id AND cmp.winner_id = i.id) 
+                      THEN 1 END) > 0
+      ORDER BY recent_wins DESC, i.elo_rating DESC
+      LIMIT $1
+    `;
+    
+    // Get items with recent losses (falling)
+    const fallingQuery = `
+      SELECT DISTINCT i.id, i.title, i.image_url, i.description, i.elo_rating,
+             i.comparison_count, i.wins, i.losses,
+             COUNT(CASE WHEN ((cmp.item1_id = i.id AND cmp.winner_id != i.id) 
+                           OR (cmp.item2_id = i.id AND cmp.winner_id != i.id))
+                       AND cmp.winner_id IS NOT NULL
+                  THEN 1 END) as recent_losses
+      FROM items i
+      LEFT JOIN comparisons cmp ON (cmp.item1_id = i.id OR cmp.item2_id = i.id)
+        AND cmp.created_at >= NOW() - INTERVAL '24 hours'
+      GROUP BY i.id
+      HAVING COUNT(CASE WHEN ((cmp.item1_id = i.id AND cmp.winner_id != i.id) 
+                                 OR (cmp.item2_id = i.id AND cmp.winner_id != i.id))
+                            AND cmp.winner_id IS NOT NULL
+                       THEN 1 END) > 0
+      ORDER BY recent_losses DESC, i.elo_rating DESC
+      LIMIT $1
+    `;
+    
+    Promise.all([
+      db.query(risingQuery, [limit]),
+      db.query(fallingQuery, [limit])
+    ]).then(([risingResult, fallingResult]) => {
+      res.json({
+        rising: risingResult.rows || [],
+        falling: fallingResult.rows || []
+      });
+    }).catch(err => {
+      console.error('Error fetching rising/falling items:', err);
+      res.status(500).json({ error: 'Failed to fetch rising/falling items' });
+    });
+    return;
+  }
+  
+  // SQLite version
+  const risingQuery = `
+    SELECT DISTINCT i.id, i.title, i.image_url, i.description, i.elo_rating,
+           i.comparison_count, i.wins, i.losses,
+           COUNT(CASE WHEN (cmp.item1_id = i.id AND cmp.winner_id = i.id) 
+                     OR (cmp.item2_id = i.id AND cmp.winner_id = i.id) 
+                THEN 1 END) as recent_wins
+    FROM items i
+    LEFT JOIN comparisons cmp ON (cmp.item1_id = i.id OR cmp.item2_id = i.id)
+      AND datetime(cmp.created_at) >= datetime('now', '-24 hours')
+    GROUP BY i.id
+    HAVING COUNT(CASE WHEN (cmp.item1_id = i.id AND cmp.winner_id = i.id) 
+                         OR (cmp.item2_id = i.id AND cmp.winner_id = i.id) 
+                    THEN 1 END) > 0
+    ORDER BY recent_wins DESC, i.elo_rating DESC
+    LIMIT ?
+  `;
+  
+  const fallingQuery = `
+    SELECT DISTINCT i.id, i.title, i.image_url, i.description, i.elo_rating,
+           i.comparison_count, i.wins, i.losses,
+           COUNT(CASE WHEN ((cmp.item1_id = i.id AND cmp.winner_id != i.id) 
+                         OR (cmp.item2_id = i.id AND cmp.winner_id != i.id))
+                     AND cmp.winner_id IS NOT NULL
+                THEN 1 END) as recent_losses
+    FROM items i
+    LEFT JOIN comparisons cmp ON (cmp.item1_id = i.id OR cmp.item2_id = i.id)
+      AND datetime(cmp.created_at) >= datetime('now', '-24 hours')
+    GROUP BY i.id
+    HAVING COUNT(CASE WHEN ((cmp.item1_id = i.id AND cmp.winner_id != i.id) 
+                               OR (cmp.item2_id = i.id AND cmp.winner_id != i.id))
+                          AND cmp.winner_id IS NOT NULL
+                     THEN 1 END) > 0
+    ORDER BY recent_losses DESC, i.elo_rating DESC
+    LIMIT ?
+  `;
+  
+  dbInstance.all(risingQuery, [limit], (risingErr, risingRows) => {
+    if (risingErr) {
+      console.error('Error fetching rising items:', risingErr);
+      return res.status(500).json({ error: 'Failed to fetch rising items' });
+    }
+    
+    dbInstance.all(fallingQuery, [limit], (fallingErr, fallingRows) => {
+      if (fallingErr) {
+        console.error('Error fetching falling items:', fallingErr);
+        return res.status(500).json({ error: 'Failed to fetch falling items' });
+      }
+      
+      res.json({
+        rising: risingRows || [],
+        falling: fallingRows || []
+      });
+    });
+  });
+};
+
 module.exports = {
   getRankings,
   searchItem,
   getItemById,
-  getTrendingItems
+  getTrendingItems,
+  getRisingFalling
 };
