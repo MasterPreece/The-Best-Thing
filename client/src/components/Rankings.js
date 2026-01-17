@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { RankingSkeleton } from './SkeletonLoader';
 import ItemSubmissionModal from './ItemSubmissionModal';
-import { useAuth } from '../contexts/AuthContext';
 import './Rankings.css';
 
 const Rankings = () => {
