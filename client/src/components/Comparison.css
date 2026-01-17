@@ -237,7 +237,8 @@
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
-  z-index: 10;
+  z-index: 100;
+  pointer-events: auto;
   transition: all 0.2s;
   backdrop-filter: blur(10px);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);

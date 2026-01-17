@@ -412,8 +412,10 @@ const Comparison = ({ userSessionId }) => {
               <div className="item-placeholder">No Image</div>
             )}
             <button
+              type="button"
               className="submit-photo-button"
               onClick={(e) => {
+                e.preventDefault();
                 e.stopPropagation();
                 setShowPhotoModal('item1');
               }}
@@ -486,8 +488,10 @@ const Comparison = ({ userSessionId }) => {
               <div className="item-placeholder">No Image</div>
             )}
             <button
+              type="button"
               className="submit-photo-button"
               onClick={(e) => {
+                e.preventDefault();
                 e.stopPropagation();
                 setShowPhotoModal('item2');
               }}
