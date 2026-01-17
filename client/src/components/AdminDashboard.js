@@ -735,6 +735,8 @@ const AssignCategoriesModal = ({ onClose, onSuccess, api }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [intelligent, setIntelligent] = useState(true);
+  const [limit, setLimit] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -743,7 +745,21 @@ const AssignCategoriesModal = ({ onClose, onSuccess, api }) => {
     setLoading(true);
 
     try {
-      await api.post('/api/admin/assign-categories');
+      const body = {
+        intelligent: intelligent
+      };
+      
+      if (limit && limit.trim()) {
+        const parsedLimit = parseInt(limit);
+        if (isNaN(parsedLimit) || parsedLimit <= 0) {
+          setError('Limit must be a positive number');
+          setLoading(false);
+          return;
+        }
+        body.limit = parsedLimit;
+      }
+
+      await api.post('/api/admin/assign-categories', body);
 
       setSuccess(true);
     } catch (err) {
@@ -771,9 +787,11 @@ const AssignCategoriesModal = ({ onClose, onSuccess, api }) => {
             <div className="info-box">
               <p><strong>📋 What happens next:</strong></p>
               <ul>
-                <li>All items without a category will be assigned to the "Other" category.</li>
-                <li>The process runs quickly and should complete in seconds.</li>
+                <li>The system will fetch Wikipedia categories for each item and match them intelligently.</li>
+                <li>Items will be assigned to appropriate categories (Food & Drinks, Movies & TV, Music, etc.).</li>
+                <li>Items that cannot be matched will be skipped (you can run default assignment later for those).</li>
                 <li>Check the category selector on the rankings page to see updated counts.</li>
+                <li>Progress is logged in Railway server logs - check there for detailed matching results.</li>
               </ul>
             </div>
             
@@ -798,24 +816,61 @@ const AssignCategoriesModal = ({ onClose, onSuccess, api }) => {
 
         <form onSubmit={handleSubmit}>
           <div className="assign-categories-info">
-            <p>This tool assigns all items without a category to the <strong>"Other"</strong> category.</p>
+            <p>This tool intelligently assigns categories to items by analyzing their Wikipedia categories.</p>
             
             <div className="info-box">
-              <p><strong>What this does:</strong></p>
+              <p><strong>🧠 Intelligent Mode (Recommended):</strong></p>
               <ul>
-                <li>Finds all items with <code>category_id = NULL</code></li>
-                <li>Assigns them to the "Other" category</li>
-                <li>Creates the "Other" category if it doesn't exist</li>
-                <li>Updates the category counts immediately</li>
+                <li>Fetches Wikipedia categories for each item</li>
+                <li>Matches Wikipedia categories to our category system using keyword analysis</li>
+                <li>Assigns items to the best matching category (Food & Drinks, Movies & TV, Music, etc.)</li>
+                <li>Items that cannot be matched are skipped (can run default assignment later)</li>
+                <li>Takes longer but provides accurate categorization</li>
               </ul>
             </div>
             
+            <div className="form-group">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={intelligent}
+                  onChange={(e) => setIntelligent(e.target.checked)}
+                  disabled={loading}
+                />
+                <span>Use intelligent category matching (recommended)</span>
+              </label>
+              <small className="field-hint">
+                {intelligent 
+                  ? 'Will fetch Wikipedia categories and match them intelligently'
+                  : 'Will assign all items to "Other" category (quick but less accurate)'}
+              </small>
+            </div>
+
+            <div className="form-group">
+              <label>
+                Limit (Optional)
+                <span className="field-hint"> - Leave empty to process all items</span>
+              </label>
+              <input
+                type="number"
+                value={limit}
+                onChange={(e) => setLimit(e.target.value)}
+                placeholder="e.g., 100"
+                min="1"
+                disabled={loading}
+              />
+              <small className="field-hint">
+                Process only the first N uncategorized items (useful for testing)
+              </small>
+            </div>
+            
             <div className="warning-box">
-              <p><strong>⚠️ Note:</strong></p>
+              <p><strong>⏱️ Timing:</strong></p>
               <ul>
-                <li>This is a one-time operation to fix items that were created before categories were implemented.</li>
-                <li>Future items can be assigned to proper categories during creation or via the admin panel.</li>
-                <li>This operation is fast and should complete in seconds.</li>
+                <li>Intelligent mode: ~{limit ? Math.ceil(parseInt(limit) / 3.3) : '100-200'} seconds ({limit ? limit : '1000'} items = ~5 minutes)</li>
+                <li>Default mode: ~5 seconds regardless of item count</li>
+                <li>The process respects Wikipedia's rate limits (300ms delay between requests)</li>
+                <li>Progress is logged in Railway server logs</li>
               </ul>
             </div>
           </div>

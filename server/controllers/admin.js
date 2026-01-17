@@ -2,6 +2,7 @@ const db = require('../database');
 const seedCategoriesFunction = require('../scripts/seed-categories-wrapper');
 const seedTop2000Function = require('../scripts/seed-top-2000-wrapper');
 const { assignDefaultCategories } = require('../scripts/assign-default-categories');
+const { assignIntelligentCategories } = require('../scripts/assign-intelligent-categories');
 const { updateMissingImages } = require('../scripts/update-missing-images');
 
 /**
@@ -490,21 +491,38 @@ const getAdminStats = async (req, res) => {
 };
 
 /**
- * Trigger category assignment for uncategorized items
+ * Trigger intelligent category assignment for uncategorized items
  * POST /api/admin/assign-categories
+ * Body: { intelligent?: boolean, limit?: number }
  */
 const triggerAssignCategories = async (req, res) => {
   try {
-    // Run assignment in background (don't block the response)
-    res.json({ 
-      message: 'Category assignment started. This will assign all uncategorized items to "Other" category.',
-      note: 'Check logs to monitor progress.'
-    });
+    const { intelligent = true, limit = null } = req.body; // Default to intelligent assignment
     
-    // Run assignment asynchronously
-    assignDefaultCategories().catch(err => {
-      console.error('Error during admin-triggered category assignment:', err);
-    });
+    if (intelligent) {
+      // Intelligent assignment using Wikipedia categories
+      res.json({ 
+        message: 'Intelligent category assignment started. This will fetch Wikipedia categories and match them to our category system.',
+        note: 'Items that cannot be matched will be skipped. Check logs to monitor progress.',
+        limit: limit || 'all'
+      });
+      
+      // Run intelligent assignment asynchronously
+      assignIntelligentCategories(limit ? parseInt(limit) : null).catch(err => {
+        console.error('Error during intelligent category assignment:', err);
+      });
+    } else {
+      // Simple assignment to "Other"
+      res.json({ 
+        message: 'Category assignment started. This will assign all uncategorized items to "Other" category.',
+        note: 'Check logs to monitor progress.'
+      });
+      
+      // Run default assignment asynchronously
+      assignDefaultCategories().catch(err => {
+        console.error('Error during default category assignment:', err);
+      });
+    }
     
   } catch (error) {
     console.error('Error in triggerAssignCategories:', error);
