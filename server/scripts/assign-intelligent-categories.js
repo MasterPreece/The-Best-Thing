@@ -6,7 +6,6 @@
 
 const db = require('../database');
 const axios = require('axios');
-const slugify = require('slugify');
 
 const WIKIPEDIA_API = 'https://en.wikipedia.org/w/api.php';
 const API_DELAY = 300; // Rate limiting
