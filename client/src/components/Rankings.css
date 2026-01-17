@@ -270,9 +270,10 @@
 }
 
 .rank-description {
-  color: rgba(240, 240, 240, 0.95);
+  color: #ffffff;
+  opacity: 0.9;
   font-size: 0.9rem;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 .rank-stats {
