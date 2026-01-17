@@ -335,17 +335,18 @@
 .item-info {
   padding: 1.5rem;
   text-align: center;
+  color: #ffffff;
 }
 
 .item-title {
   font-size: 1.5rem;
   margin-bottom: 0.75rem;
-  color: #ffffff;
+  color: #ffffff !important;
   font-weight: 600;
 }
 
 .item-title-link {
-  color: #ffffff;
+  color: #ffffff !important;
   text-decoration: none;
   transition: all 0.2s ease;
   display: inline-block;
@@ -353,7 +354,7 @@
 }
 
 .item-title-link:hover {
-  color: #667eea;
+  color: #667eea !important;
   text-decoration: underline;
   transform: scale(1.02);
 }
@@ -372,7 +373,7 @@
 
 .item-description {
   font-size: 0.95rem;
-  color: #ffffff;
+  color: #ffffff !important;
   line-height: 1.6;
   margin-bottom: 1rem;
   font-style: italic;
