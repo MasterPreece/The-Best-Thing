@@ -175,39 +175,30 @@ const ItemDetail = () => {
         <div className="item-main">
           <div className="item-image-section">
             {item.image_url && !imageError ? (
-              <>
-                <img
-                  src={item.image_url}
-                  alt={item.title}
-                  className="item-detail-image"
-                  loading="lazy"
-                  onError={(e) => {
-                    e.target.src = 'https://via.placeholder.com/400x400?text=No+Image';
-                    setImageError(true);
-                  }}
-                />
-                <button
-                  type="button"
-                  className="submit-photo-button"
-                  onClick={() => setShowPhotoModal(true)}
-                  title="Submit a photo for this item"
-                  style={{ display: imageError ? 'block' : 'none' }}
-                >
-                  📷 Submit Photo
-                </button>
-              </>
+              <img
+                src={item.image_url}
+                alt={item.title}
+                className="item-detail-image"
+                loading="lazy"
+                onError={(e) => {
+                  e.target.src = 'https://via.placeholder.com/400x400?text=No+Image';
+                  setImageError(true);
+                }}
+              />
             ) : (
               <div className="item-image-placeholder">
                 📷 No Image Available
-                <button
-                  type="button"
-                  className="submit-photo-button"
-                  onClick={() => setShowPhotoModal(true)}
-                  title="Submit a photo for this item"
-                >
-                  📷 Submit Photo
-                </button>
               </div>
+            )}
+            {(!item.image_url || imageError || item.image_url === 'https://via.placeholder.com/400x400?text=No+Image') && (
+              <button
+                type="button"
+                className="submit-photo-button"
+                onClick={() => setShowPhotoModal(true)}
+                title="Submit a photo for this item"
+              >
+                📷 Submit Photo
+              </button>
             )}
           </div>
 
