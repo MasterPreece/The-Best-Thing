@@ -22,9 +22,9 @@ const getLeaderboard = async (req, res) => {
         // Get all - combine anonymous sessions and logged-in users
         const result = await db.query(`
           SELECT 
-            COALESCE(session_id, username) as identifier,
+            session_id as identifier,
             session_id,
-            username,
+            NULL as username,
             comparisons_count, 
             last_active,
             'anonymous' as user_type
@@ -59,9 +59,9 @@ const getLeaderboard = async (req, res) => {
         const result = await db.query(`
           SELECT * FROM (
             SELECT 
-              COALESCE(session_id, username) as identifier,
+              session_id as identifier,
               session_id,
-              username,
+              NULL as username,
               comparisons_count, 
               last_active,
               'anonymous' as user_type
@@ -100,9 +100,9 @@ const getLeaderboard = async (req, res) => {
         rows = await new Promise((resolve, reject) => {
           dbInstance.all(`
             SELECT 
-              COALESCE(session_id, username) as identifier,
+              session_id as identifier,
               session_id,
-              username,
+              NULL as username,
               comparisons_count, 
               last_active,
               'anonymous' as user_type
@@ -145,9 +145,9 @@ const getLeaderboard = async (req, res) => {
           dbInstance.all(`
             SELECT * FROM (
               SELECT 
-                COALESCE(session_id, username) as identifier,
+                session_id as identifier,
                 session_id,
-                username,
+                NULL as username,
                 comparisons_count, 
                 last_active,
                 'anonymous' as user_type
