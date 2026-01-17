@@ -59,13 +59,48 @@ function NavLinks({ showAuthModal, setShowAuthModal, setShowDonateModal, user, l
   );
 }
 
+function AppRoutes({ userSessionId, adminToken, setAdminToken }) {
+  const location = useLocation();
+  
+  return (
+    <div className="page-transition-wrapper" key={location.pathname}>
+      <Routes location={location} key={location.pathname}>
+        <Route path="/" element={<Comparison userSessionId={userSessionId} />} />
+        <Route path="/rankings" element={<Rankings />} />
+        <Route path="/leaderboard" element={<Leaderboard />} />
+        <Route path="/items/:id" element={<ItemDetail />} />
+        <Route 
+          path="/admin" 
+          element={
+            adminToken ? (
+              <AdminDashboard 
+                adminToken={adminToken}
+                onLogout={() => {
+                  localStorage.removeItem('adminToken');
+                  setAdminToken(null);
+                }}
+              />
+            ) : (
+              <AdminLogin 
+                onLogin={(token) => {
+                  localStorage.setItem('adminToken', token);
+                  setAdminToken(token);
+                }}
+              />
+            )
+          } 
+        />
+      </Routes>
+    </div>
+  );
+}
+
 function AppContent() {
   const [userSessionId, setUserSessionId] = useState(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showDonateModal, setShowDonateModal] = useState(false);
   const [adminToken, setAdminToken] = useState(null);
   const { user, logout, isAuthenticated } = useAuth();
-  const location = useLocation();
 
   useEffect(() => {
     // Check for admin token in localStorage
@@ -109,35 +144,11 @@ function AppContent() {
         </nav>
 
         <main className="main-content">
-          <div className="page-transition-wrapper" key={location.pathname}>
-            <Routes location={location} key={location.pathname}>
-              <Route path="/" element={<Comparison userSessionId={userSessionId} />} />
-              <Route path="/rankings" element={<Rankings />} />
-              <Route path="/leaderboard" element={<Leaderboard />} />
-              <Route path="/items/:id" element={<ItemDetail />} />
-              <Route 
-                path="/admin" 
-                element={
-                  adminToken ? (
-                    <AdminDashboard 
-                      adminToken={adminToken}
-                      onLogout={() => {
-                        localStorage.removeItem('adminToken');
-                        setAdminToken(null);
-                      }}
-                    />
-                  ) : (
-                    <AdminLogin 
-                      onLogin={(token) => {
-                        localStorage.setItem('adminToken', token);
-                        setAdminToken(token);
-                      }}
-                    />
-                  )
-              } 
-            />
-            </Routes>
-          </div>
+          <AppRoutes 
+            userSessionId={userSessionId} 
+            adminToken={adminToken} 
+            setAdminToken={setAdminToken} 
+          />
         </main>
 
         <footer className="footer">
