@@ -345,46 +345,6 @@ const Comparison = ({ userSessionId }) => {
 
       <div className="comparison-header">
         <h1>What is the Best Thing? 🎯</h1>
-        <p className="subtitle">
-          Click on the one you think is better!
-          <br />
-          <span className="keyboard-hint">
-            💡 Use ← → arrows or A/D keys to vote • Space/S to skip
-          </span>
-        </p>
-        {globalStats && (
-          <div className="global-stats" ref={statsRef}>
-            <div className="stat-badge">
-              <strong className="stat-total-comparisons">{globalStats.totalComparisons.toLocaleString()}</strong> total votes
-            </div>
-            <div className="stat-badge">
-              <strong className="stat-total-items">{globalStats.totalItems.toLocaleString()}</strong> items ranked
-            </div>
-            {globalStats.todayComparisons > 0 && (
-              <div className="stat-badge highlight">
-                <strong className="stat-today-comparisons">{globalStats.todayComparisons.toLocaleString()}</strong> today
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="comparison-controls">
-        <button
-          onClick={handleSkip}
-          disabled={voting || loading}
-          className="skip-button"
-          title="Skip this comparison (Space or S)"
-        >
-          ⏭ Skip
-        </button>
-        <button
-          onClick={handleShare}
-          className="share-button"
-          title="Share this comparison"
-        >
-          📤 Share
-        </button>
       </div>
 
       <div className="comparison-grid">
