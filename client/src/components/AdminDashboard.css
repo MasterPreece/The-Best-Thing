@@ -97,7 +97,8 @@
 
 .add-button,
 .bulk-import-button,
-.update-images-button {
+.update-images-button,
+.assign-categories-button {
   padding: 12px 24px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
@@ -117,10 +118,15 @@
   background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
 }
 
+.assign-categories-button {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
 .add-button:hover,
 .bulk-import-button:hover,
 .seed-top2000-button:hover,
-.update-images-button:hover {
+.update-images-button:hover,
+.assign-categories-button:hover {
   transform: translateY(-2px);
 }
 
@@ -842,7 +848,8 @@
   margin-bottom: 5px;
 }
 
-.seed-success {
+.seed-success,
+.assign-categories-success {
   padding: 20px 0;
   text-align: center;
 }
