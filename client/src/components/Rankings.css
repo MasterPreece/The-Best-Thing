@@ -8,6 +8,45 @@
   margin-bottom: 3rem;
 }
 
+.header-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.header-top-row > div {
+  flex: 1;
+  min-width: 200px;
+}
+
+.submit-item-button {
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 25px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+  white-space: nowrap;
+  min-height: 44px;
+  touch-action: manipulation;
+}
+
+.submit-item-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.submit-item-button:active {
+  transform: translateY(0);
+}
+
 .rankings-header h1 {
   font-size: 3rem;
   margin-bottom: 0.5rem;

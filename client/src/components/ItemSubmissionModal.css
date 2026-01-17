@@ -1,0 +1,63 @@
+.item-submission-modal {
+  max-width: 600px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.item-submission-modal .form-group {
+  margin-bottom: 1.5rem;
+}
+
+.item-submission-modal label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.item-submission-modal input[type="text"],
+.item-submission-modal input[type="url"],
+.item-submission-modal textarea,
+.item-submission-modal select {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  font-size: 1rem;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.item-submission-modal input:focus,
+.item-submission-modal textarea:focus,
+.item-submission-modal select:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.item-submission-modal textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.item-submission-modal .field-hint {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.item-submission-modal .info-box {
+  background: #e7f3ff;
+  border-left: 4px solid #0066cc;
+  padding: 1rem;
+  margin: 1rem 0;
+  border-radius: 5px;
+  font-size: 0.9rem;
+}
+
+.item-submission-modal .info-box p {
+  margin: 0;
+  color: #333;
+}

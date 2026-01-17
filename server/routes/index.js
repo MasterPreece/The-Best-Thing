@@ -11,6 +11,7 @@ const adminController = require('../controllers/admin');
 const bulkImportController = require('../controllers/bulk-import');
 const categoriesController = require('../controllers/categories');
 const photoSubmissionsController = require('../controllers/photo-submissions');
+const itemSubmissionsController = require('../controllers/item-submissions');
 const { adminAuth, adminLogin } = require('../utils/admin-auth');
 const { authenticate, optionalAuthenticate } = require('../utils/auth');
 const multer = require('multer');
@@ -78,6 +79,9 @@ router.get('/collections/check/:comparisonId', optionalAuthenticate, collections
 // Photo Submissions
 router.post('/photo-submissions', optionalAuthenticate, photoSubmissionsController.submitPhoto);
 
+// Item Submissions
+router.post('/item-submissions', optionalAuthenticate, itemSubmissionsController.submitItem);
+
 // Admin endpoints
 router.post('/admin/login', adminLogin);
 
@@ -104,6 +108,9 @@ router.get('/admin/bulk-import/template', adminAuth, bulkImportController.getTem
 router.get('/admin/photo-submissions', adminAuth, photoSubmissionsController.getPhotoSubmissions);
 router.post('/admin/photo-submissions/:id/approve', adminAuth, photoSubmissionsController.approvePhoto);
 router.post('/admin/photo-submissions/:id/reject', adminAuth, photoSubmissionsController.rejectPhoto);
+router.get('/admin/item-submissions', adminAuth, itemSubmissionsController.getItemSubmissions);
+router.post('/admin/item-submissions/:id/approve', adminAuth, itemSubmissionsController.approveItem);
+router.post('/admin/item-submissions/:id/reject', adminAuth, itemSubmissionsController.rejectItem);
 
 // Health check
 router.get('/health', (req, res) => {

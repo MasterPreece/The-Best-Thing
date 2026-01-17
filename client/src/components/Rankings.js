@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { RankingSkeleton } from './SkeletonLoader';
+import ItemSubmissionModal from './ItemSubmissionModal';
+import { useAuth } from '../contexts/AuthContext';
 import './Rankings.css';
 
 const Rankings = () => {
@@ -15,6 +17,8 @@ const Rankings = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('');
+  const [showItemModal, setShowItemModal] = useState(false);
+  const { user } = useAuth();
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -122,11 +126,24 @@ const Rankings = () => {
     );
   }
 
+  const userSessionId = localStorage.getItem('userSessionId');
+
   return (
     <div className="rankings-container">
       <div className="rankings-header">
-        <h1>🏆 The Best Things Ranking</h1>
-        <p>Based on community votes using Elo rating system</p>
+        <div className="header-top-row">
+          <div>
+            <h1>🏆 The Best Things Ranking</h1>
+            <p>Based on community votes using Elo rating system</p>
+          </div>
+          <button 
+            className="submit-item-button" 
+            onClick={() => setShowItemModal(true)}
+            title="Submit a new item to be ranked"
+          >
+            ➕ Submit New Item
+          </button>
+        </div>
         
         <div className="search-container">
           <input
@@ -271,6 +288,17 @@ const Rankings = () => {
           ))
         )}
       </div>
+
+      {showItemModal && (
+        <ItemSubmissionModal
+          onClose={() => setShowItemModal(false)}
+          onSuccess={() => {
+            // Optionally show a toast or refresh
+            setShowItemModal(false);
+          }}
+          userSessionId={userSessionId}
+        />
+      )}
     </div>
   );
 };

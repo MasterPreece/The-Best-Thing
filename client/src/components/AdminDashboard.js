@@ -16,6 +16,7 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
   const [showSeedTop2000Modal, setShowSeedTop2000Modal] = useState(false);
   const [showAssignCategoriesModal, setShowAssignCategoriesModal] = useState(false);
   const [showPhotoSubmissions, setShowPhotoSubmissions] = useState(false);
+  const [showItemSubmissions, setShowItemSubmissions] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [error, setError] = useState('');
 
@@ -157,6 +158,9 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
           </button>
           <button className="photo-submissions-button" onClick={() => setShowPhotoSubmissions(true)}>
             📷 Photo Submissions
+          </button>
+          <button className="item-submissions-button" onClick={() => setShowItemSubmissions(true)}>
+            ➕ Item Submissions
           </button>
         </div>
       </div>
@@ -333,6 +337,17 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
       {showPhotoSubmissions && (
         <PhotoSubmissionsPanel
           onClose={() => setShowPhotoSubmissions(false)}
+          onApprove={() => {
+            fetchItems();
+            fetchStats();
+          }}
+          api={api}
+        />
+      )}
+
+      {showItemSubmissions && (
+        <ItemSubmissionsPanel
+          onClose={() => setShowItemSubmissions(false)}
           onApprove={() => {
             fetchItems();
             fetchStats();
@@ -1417,6 +1432,162 @@ const PhotoSubmissionsPanel = ({ onClose, onApprove, api }) => {
                   </div>
                   <div className="submission-info">
                     <h3>{submission.item_title}</h3>
+                    <p><strong>Submitted by:</strong> {submission.submitter_username || `Anonymous (${submission.user_session_id?.substring(0, 20)}...)`}</p>
+                    <p><strong>Submitted:</strong> {new Date(submission.submitted_at).toLocaleString()}</p>
+                  </div>
+                  <div className="submission-actions">
+                    <button
+                      className="approve-button"
+                      onClick={() => handleApprove(submission.id)}
+                    >
+                      ✅ Approve
+                    </button>
+                    <button
+                      className="reject-button"
+                      onClick={() => handleReject(submission.id)}
+                    >
+                      ❌ Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {pagination.totalPages > 1 && (
+              <div className="pagination">
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                  Previous
+                </button>
+                <span>Page {page} of {pagination.totalPages} ({pagination.total} total)</span>
+                <button onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))} disabled={page >= pagination.totalPages}>
+                  Next
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Item Submissions Panel
+const ItemSubmissionsPanel = ({ onClose, onApprove, api }) => {
+  const [submissions, setSubmissions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
+  const [toast, setToast] = useState(null);
+  const limit = 20;
+
+  const showToast = (message, type) => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const fetchSubmissions = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await api.get(`/api/admin/item-submissions?status=pending&limit=${limit}&offset=${(page - 1) * limit}`);
+      setSubmissions(response.data.submissions || []);
+      setPagination(response.data.pagination || {});
+      setError('');
+    } catch (err) {
+      console.error('Error fetching item submissions:', err);
+      if (err.response?.status === 401) {
+        onClose();
+        window.location.reload();
+      } else {
+        setError(err.response?.data?.error || 'Failed to load item submissions');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [api, page, limit, onClose]);
+
+  useEffect(() => {
+    fetchSubmissions();
+  }, [fetchSubmissions]);
+
+  const handleApprove = async (submissionId) => {
+    try {
+      await api.post(`/api/admin/item-submissions/${submissionId}/approve`);
+      showToast('Item approved and added to database!', 'success');
+      fetchSubmissions();
+      onApprove();
+    } catch (err) {
+      console.error('Error approving item:', err);
+      alert('Failed to approve item: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const handleReject = async (submissionId) => {
+    const reason = prompt('Enter reason for rejection (optional):');
+    if (reason === null) return; // User cancelled
+    
+    try {
+      await api.post(`/api/admin/item-submissions/${submissionId}/reject`, { reason: reason || null });
+      showToast('Item rejected', 'info');
+      fetchSubmissions();
+    } catch (err) {
+      console.error('Error rejecting item:', err);
+      alert('Failed to reject item: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  return (
+    <div className="photo-submissions-panel-overlay" onClick={onClose}>
+      <div className="photo-submissions-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="photo-submissions-header">
+          <h2>➕ Item Submissions</h2>
+          <button className="close-button" onClick={onClose}>×</button>
+        </div>
+
+        {toast && (
+          <div className={`toast toast-${toast.type}`}>
+            {toast.message}
+          </div>
+        )}
+
+        {error && <div className="error-banner">{error}</div>}
+
+        {loading ? (
+          <div className="loading">Loading submissions...</div>
+        ) : submissions.length === 0 ? (
+          <div className="no-submissions">
+            <p>No pending item submissions</p>
+          </div>
+        ) : (
+          <>
+            <div className="submissions-list">
+              {submissions.map((submission) => (
+                <div key={submission.id} className="submission-item">
+                  <div className="submission-images" style={{ minHeight: '150px' }}>
+                    {submission.image_url ? (
+                      <div className="submission-image-group">
+                        <label>Image</label>
+                        <div className="image-preview">
+                          <img src={submission.image_url} alt={submission.title} onError={(e) => {
+                            e.target.parentElement.innerHTML = '<div class="no-image">Invalid image URL</div>';
+                          }} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="no-image-placeholder">No image provided</div>
+                    )}
+                  </div>
+                  <div className="submission-info">
+                    <h3>{submission.title}</h3>
+                    {submission.description && (
+                      <p><strong>Description:</strong> {submission.description}</p>
+                    )}
+                    {submission.wikipedia_url && (
+                      <p><strong>Wikipedia:</strong> <a href={submission.wikipedia_url} target="_blank" rel="noopener noreferrer">View</a></p>
+                    )}
+                    {submission.category_name && (
+                      <p><strong>Category:</strong> {submission.category_name}</p>
+                    )}
                     <p><strong>Submitted by:</strong> {submission.submitter_username || `Anonymous (${submission.user_session_id?.substring(0, 20)}...)`}</p>
                     <p><strong>Submitted:</strong> {new Date(submission.submitted_at).toLocaleString()}</p>
                   </div>

@@ -315,6 +315,89 @@ const runMigrations = async () => {
       });
     });
   }
+
+  // Migration: Add item_submissions table
+  if (dbType === 'postgres') {
+    try {
+      // Check if item_submissions table exists
+      const tableCheck = await db.query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_name = 'item_submissions'
+      `);
+      
+      if (tableCheck.rows.length === 0) {
+        console.log('Creating item_submissions table...');
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS item_submissions (
+            id SERIAL PRIMARY KEY,
+            title VARCHAR(255) NOT NULL,
+            description TEXT,
+            image_url TEXT,
+            wikipedia_url TEXT,
+            category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+            user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            user_session_id VARCHAR(255),
+            status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+            submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            reviewed_at TIMESTAMP,
+            reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            rejection_reason TEXT
+          )
+        `);
+        
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_item_submissions_status ON item_submissions(status)
+        `);
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_item_submissions_submitted_at ON item_submissions(submitted_at DESC)
+        `);
+        
+        console.log('Item submissions table created');
+      }
+    } catch (err) {
+      console.error('Item submissions migration error:', err);
+      // Don't throw - allow server to continue
+    }
+  } else {
+    // SQLite: Check and create item_submissions table
+    await new Promise((resolve) => {
+      dbInstance.serialize(() => {
+        dbInstance.get(`
+          SELECT name FROM sqlite_master 
+          WHERE type='table' AND name='item_submissions'
+        `, (err, table) => {
+          if (!table && !err) {
+            console.log('Creating item_submissions table...');
+            dbInstance.run(`CREATE TABLE IF NOT EXISTS item_submissions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              title TEXT NOT NULL,
+              description TEXT,
+              image_url TEXT,
+              wikipedia_url TEXT,
+              category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+              user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+              user_session_id TEXT,
+              status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+              submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              reviewed_at DATETIME,
+              reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+              rejection_reason TEXT
+            )`, () => {
+              dbInstance.run(`CREATE INDEX IF NOT EXISTS idx_item_submissions_status ON item_submissions(status)`, () => {
+                dbInstance.run(`CREATE INDEX IF NOT EXISTS idx_item_submissions_submitted_at ON item_submissions(submitted_at DESC)`, () => {
+                  console.log('Item submissions table created');
+                  resolve();
+                });
+              });
+            });
+          } else {
+            resolve();
+          }
+        });
+      });
+    });
+  }
 };
 
 module.exports = {
