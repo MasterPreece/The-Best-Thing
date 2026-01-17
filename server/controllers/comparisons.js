@@ -478,10 +478,13 @@ const submitVote = (req, res) => {
                 
                 if (dbType === 'postgres') {
                   // Use db.query() for PostgreSQL
-                  db.query(upsertSql, upsertParams).then(() => {
+                  console.log('[PostgreSQL] Updating user session:', userSessionId);
+                  db.query(upsertSql, upsertParams).then((insertResult) => {
+                    console.log('[PostgreSQL] User session upsert successful, rows:', insertResult.rowCount);
                     // Get updated count
                     return db.query('SELECT comparisons_count FROM user_sessions WHERE session_id = $1', [userSessionId]);
                   }).then(result => {
+                    console.log('[PostgreSQL] Fetched session count:', result.rows[0]);
                     const comparisonCount = result.rows[0] ? result.rows[0].comparisons_count : 0;
                     const shouldPromptAccount = comparisonCount >= 10;
                     
@@ -495,7 +498,9 @@ const submitVote = (req, res) => {
                       comparisonCount
                     });
                   }).catch(err => {
-                    console.error('Error updating user session (PostgreSQL):', err);
+                    console.error('[PostgreSQL] Error updating user session:', err);
+                    console.error('[PostgreSQL] SQL:', upsertSql);
+                    console.error('[PostgreSQL] Params:', upsertParams);
                     // Continue anyway - don't fail the vote if session update fails
                     res.json({
                       success: true,
@@ -508,10 +513,22 @@ const submitVote = (req, res) => {
                   });
                 } else {
                   // Use SQLite callback API
+                  // Note: upsertSql already has correct SQLite syntax for this branch
                   dbInstance.run(upsertSql, upsertParams, function(err) {
                     if (err) {
-                      console.error('Error updating user session:', err);
+                      console.error('[SQLite] Error updating user session:', err);
+                      console.error('[SQLite] SQL:', upsertSql);
+                      console.error('[SQLite] Params:', upsertParams);
                       // Continue anyway - don't fail the vote if session update fails
+                      // Still send response even if session update failed
+                      return res.json({
+                        success: true,
+                        newRatings: {
+                          item1: newRating1,
+                          item2: newRating2
+                        },
+                        shouldPromptAccount: false
+                      });
                     }
                     
                     // Get updated count to determine if we should prompt
@@ -519,7 +536,7 @@ const submitVote = (req, res) => {
                       SELECT comparisons_count FROM user_sessions WHERE session_id = ?
                     `, [userSessionId], (err, row) => {
                       if (err) {
-                        console.error('Error getting user session count:', err);
+                        console.error('[SQLite] Error getting user session count:', err);
                       }
                       const comparisonCount = row ? row.comparisons_count : 0;
                       const shouldPromptAccount = comparisonCount >= 10;
