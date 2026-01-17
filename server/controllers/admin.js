@@ -489,10 +489,37 @@ const getAdminStats = async (req, res) => {
   }
 };
 
+/**
+ * Trigger category assignment for uncategorized items
+ * POST /api/admin/assign-categories
+ */
+const triggerAssignCategories = async (req, res) => {
+  try {
+    // Run assignment in background (don't block the response)
+    res.json({ 
+      message: 'Category assignment started. This will assign all uncategorized items to "Other" category.',
+      note: 'Check logs to monitor progress.'
+    });
+    
+    // Run assignment asynchronously
+    assignDefaultCategories().catch(err => {
+      console.error('Error during admin-triggered category assignment:', err);
+    });
+    
+  } catch (error) {
+    console.error('Error in triggerAssignCategories:', error);
+    res.status(500).json({ 
+      error: 'Failed to trigger category assignment',
+      message: error.message 
+    });
+  }
+};
+
 module.exports = {
   triggerSeedCategories,
   triggerSeedTop2000,
   triggerUpdateImages,
+  triggerAssignCategories,
   getAdminItems,
   createItem,
   updateItem,
