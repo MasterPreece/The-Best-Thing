@@ -12,7 +12,7 @@ const getComments = async (req, res) => {
     let comments = [];
     
     if (dbType === 'postgres') {
-      const result = await dbInstance.query(`
+      const result = await db.query(`
         SELECT 
           c.id,
           c.content,
@@ -78,11 +78,11 @@ const createComment = async (req, res) => {
   const dbInstance = db.getDb();
   const dbType = db.getDbType();
 
-  try {
+    try {
     let comment = null;
     
     if (dbType === 'postgres') {
-      const result = await dbInstance.query(`
+      const result = await db.query(`
         INSERT INTO comments (item_id, user_id, user_session_id, content)
         VALUES ($1, $2, $3, $4)
         RETURNING id, content, created_at, updated_at, user_id, user_session_id
@@ -93,7 +93,7 @@ const createComment = async (req, res) => {
         // Get username
         let username = 'Anonymous';
         if (commentData.user_id) {
-          const userResult = await dbInstance.query('SELECT username FROM users WHERE id = $1', [commentData.user_id]);
+          const userResult = await db.query('SELECT username FROM users WHERE id = $1', [commentData.user_id]);
           username = userResult.rows[0]?.username || 'Anonymous';
         }
         
@@ -163,7 +163,7 @@ const deleteComment = async (req, res) => {
     // Check if comment exists and user owns it
     let comment = null;
     if (dbType === 'postgres') {
-      const result = await dbInstance.query(`
+      const result = await db.query(`
         SELECT user_id FROM comments WHERE id = $1
       `, [commentId]);
       comment = result.rows[0];
@@ -186,7 +186,7 @@ const deleteComment = async (req, res) => {
 
     // Delete the comment
     if (dbType === 'postgres') {
-      await dbInstance.query('DELETE FROM comments WHERE id = $1', [commentId]);
+      await db.query('DELETE FROM comments WHERE id = $1', [commentId]);
     } else {
       await new Promise((resolve, reject) => {
         dbInstance.run('DELETE FROM comments WHERE id = ?', [commentId], (err) => {
