@@ -5,13 +5,15 @@
 }
 
 .navbar {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  background: rgba(15, 12, 41, 0.85);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   padding: 1rem 0;
   position: sticky;
   top: 0;
   z-index: 100;
+  transition: all 0.3s ease;
 }
 
 .nav-container {
@@ -28,8 +30,14 @@
   font-size: 1.5rem;
   font-weight: bold;
   text-decoration: none;
-  color: #667eea;
+  color: #ffffff;
   flex-shrink: 0;
+  transition: all 0.3s ease;
+}
+
+.nav-logo:hover {
+  color: #667eea;
+  transform: scale(1.05);
 }
 
 .nav-links {
@@ -41,9 +49,9 @@
 
 .nav-link {
   text-decoration: none;
-  color: #333;
+  color: #e0e0e0;
   font-weight: 500;
-  transition: all 0.3s;
+  transition: all 0.3s ease;
   padding: 0.5rem;
   display: flex;
   align-items: center;
@@ -54,26 +62,27 @@
 
 .nav-link-primary {
   padding: 0.75rem 1.25rem;
-  background: rgba(102, 126, 234, 0.08);
+  background: rgba(255, 255, 255, 0.08);
   border: 2px solid transparent;
   border-radius: 12px;
   font-weight: 600;
   gap: 0.5rem;
   transition: all 0.3s ease;
   min-height: 48px;
+  color: #e0e0e0;
 }
 
 .nav-link-primary:hover {
-  background: rgba(102, 126, 234, 0.15);
+  background: rgba(255, 255, 255, 0.15);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
-  color: #667eea;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  color: #ffffff;
 }
 
 .nav-link-primary.active {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  border-color: #667eea;
+  border-color: rgba(102, 126, 234, 0.5);
   box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
 }
 
@@ -101,10 +110,10 @@
 }
 
 .nav-user {
-  color: #333;
+  color: #e0e0e0;
   font-weight: 500;
   padding: 0.5rem 1rem;
-  background: rgba(102, 126, 234, 0.1);
+  background: rgba(102, 126, 234, 0.2);
   border-radius: 20px;
   font-size: 0.9rem;
   white-space: nowrap;
@@ -117,11 +126,11 @@
   padding: 0.5rem 1.5rem;
   border: 2px solid #10b981;
   border-radius: 20px;
-  background: white;
+  background: transparent;
   color: #10b981;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all 0.3s ease;
   font-size: 0.9rem;
   min-height: 44px;
   display: flex;
@@ -132,6 +141,8 @@
 .nav-donate:hover {
   background: #10b981;
   color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
 }
 
 .nav-login,
@@ -139,11 +150,11 @@
   padding: 0.5rem 1.5rem;
   border: 2px solid #667eea;
   border-radius: 20px;
-  background: white;
+  background: transparent;
   color: #667eea;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all 0.3s ease;
   font-size: 0.9rem;
   min-height: 44px;
   min-width: 80px;
@@ -155,6 +166,8 @@
 .nav-login:hover {
   background: #667eea;
   color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
 .nav-logout {
@@ -165,6 +178,8 @@
 .nav-logout:hover {
   background: #ef4444;
   color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
 }
 
 .main-content {
@@ -174,13 +189,18 @@
   margin: 0 auto;
   padding: 2rem;
   box-sizing: border-box;
-  animation: fadeIn 0.3s ease-in;
+  position: relative;
 }
 
-@keyframes fadeIn {
+.page-transition-wrapper {
+  animation: pageFadeIn 0.4s ease-out;
+  width: 100%;
+}
+
+@keyframes pageFadeIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(20px);
   }
   to {
     opacity: 1;
@@ -189,12 +209,14 @@
 }
 
 .footer {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
+  background: rgba(15, 12, 41, 0.85);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
   padding: 1.5rem;
   text-align: center;
-  color: #666;
+  color: rgba(224, 224, 224, 0.7);
   margin-top: auto;
+  transition: all 0.3s ease;
 }
 
 @media (max-width: 768px) {

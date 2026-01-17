@@ -50,25 +50,30 @@
 }
 
 .leaderboard-item {
-  background: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 15px;
   padding: 1.5rem;
   display: flex;
   align-items: center;
   gap: 1.5rem;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
-  transition: transform 0.2s, box-shadow 0.2s;
-  color: #333;
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
+  color: #e0e0e0;
 }
 
 .leaderboard-item:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(102, 126, 234, 0.3);
 }
 
 .leaderboard-item.top-three {
   border: 3px solid #ffd700;
-  background: linear-gradient(135deg, rgba(255, 215, 0, 0.1) 0%, rgba(255, 255, 255, 0.95) 100%);
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.15) 0%, rgba(255, 255, 255, 0.1) 100%);
+  box-shadow: 0 8px 25px rgba(255, 215, 0, 0.2);
 }
 
 .leaderboard-rank {
@@ -87,7 +92,7 @@
   font-size: 1.3rem;
   font-weight: bold;
   margin-bottom: 0.5rem;
-  color: #333;
+  color: #ffffff;
   word-break: break-all;
   display: flex;
   align-items: center;
@@ -125,7 +130,7 @@
 
 .last-active {
   font-size: 0.85rem;
-  color: #666;
+  color: rgba(224, 224, 224, 0.6);
 }
 
 .loading-state {
