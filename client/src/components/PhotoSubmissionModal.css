@@ -1,0 +1,203 @@
+.photo-submission-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(5px);
+}
+
+.photo-submission-modal {
+  background: white;
+  border-radius: 15px;
+  padding: 0;
+  max-width: 500px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.photo-submission-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.photo-submission-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #333;
+}
+
+.photo-submission-modal .close-button {
+  background: none;
+  border: none;
+  font-size: 2rem;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background 0.2s;
+}
+
+.photo-submission-modal .close-button:hover {
+  background: #f0f0f0;
+}
+
+.photo-submission-info {
+  padding: 1.5rem;
+}
+
+.photo-submission-info p {
+  margin: 0 0 1rem 0;
+  color: #666;
+}
+
+.photo-submission-info .info-box {
+  background: #f8f9fa;
+  border-left: 4px solid #667eea;
+  padding: 1rem;
+  border-radius: 5px;
+  margin: 1rem 0;
+}
+
+.photo-submission-info .info-box ul {
+  margin: 0.5rem 0 0 1.5rem;
+  padding: 0;
+}
+
+.photo-submission-info .info-box li {
+  margin: 0.5rem 0;
+  color: #555;
+}
+
+.photo-submission-modal .form-group {
+  padding: 0 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.photo-submission-modal .form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.photo-submission-modal .form-group input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 1rem;
+  box-sizing: border-box;
+  transition: border-color 0.3s;
+}
+
+.photo-submission-modal .form-group input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.photo-submission-modal .field-hint {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.photo-submission-modal .error-message {
+  background: #fee;
+  color: #c33;
+  padding: 1rem;
+  border-radius: 8px;
+  margin: 0 1.5rem 1rem 1.5rem;
+}
+
+.photo-submission-modal .modal-actions {
+  display: flex;
+  gap: 1rem;
+  padding: 1.5rem;
+  border-top: 2px solid #e0e0e0;
+  justify-content: flex-end;
+}
+
+.photo-submission-modal .cancel-button,
+.photo-submission-modal .submit-button {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.photo-submission-modal .cancel-button {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.photo-submission-modal .cancel-button:hover {
+  background: #e0e0e0;
+}
+
+.photo-submission-modal .submit-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.photo-submission-modal .submit-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.photo-submission-modal .submit-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.photo-submission-success {
+  padding: 2rem;
+  text-align: center;
+}
+
+.photo-submission-success .success-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+.photo-submission-success h3 {
+  margin: 0 0 1rem 0;
+  color: #28a745;
+  font-size: 1.5rem;
+}
+
+.photo-submission-success p {
+  color: #666;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 768px) {
+  .photo-submission-modal {
+    width: 95%;
+    max-height: 95vh;
+  }
+
+  .photo-submission-header h2 {
+    font-size: 1.25rem;
+  }
+}
+

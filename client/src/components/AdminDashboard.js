@@ -15,6 +15,7 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
   const [showUpdateImagesModal, setShowUpdateImagesModal] = useState(false);
   const [showSeedTop2000Modal, setShowSeedTop2000Modal] = useState(false);
   const [showAssignCategoriesModal, setShowAssignCategoriesModal] = useState(false);
+  const [showPhotoSubmissions, setShowPhotoSubmissions] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [error, setError] = useState('');
 
@@ -153,6 +154,9 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
           </button>
           <button className="assign-categories-button" onClick={() => setShowAssignCategoriesModal(true)}>
             🏷️ Assign Categories
+          </button>
+          <button className="photo-submissions-button" onClick={() => setShowPhotoSubmissions(true)}>
+            📷 Photo Submissions
           </button>
         </div>
       </div>
@@ -319,6 +323,17 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
           onClose={() => setShowAssignCategoriesModal(false)}
           onSuccess={() => {
             setShowAssignCategoriesModal(false);
+            fetchItems();
+            fetchStats();
+          }}
+          api={api}
+        />
+      )}
+
+      {showPhotoSubmissions && (
+        <PhotoSubmissionsPanel
+          onClose={() => setShowPhotoSubmissions(false)}
+          onApprove={() => {
             fetchItems();
             fetchStats();
           }}

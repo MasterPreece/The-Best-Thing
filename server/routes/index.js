@@ -74,6 +74,9 @@ router.post('/collections/:comparisonId', authenticate, collectionsController.ad
 router.delete('/collections/:comparisonId', authenticate, collectionsController.removeFromCollection);
 router.get('/collections/check/:comparisonId', optionalAuthenticate, collectionsController.checkInCollection);
 
+// Photo Submissions
+router.post('/photo-submissions', optionalAuthenticate, photoSubmissionsController.submitPhoto);
+
 // Admin endpoints
 router.post('/admin/login', adminLogin);
 
@@ -97,6 +100,9 @@ router.post('/admin/bulk-import', adminAuth, upload.single('file'), (err, req, r
   next();
 }, bulkImportController.bulkImport);
 router.get('/admin/bulk-import/template', adminAuth, bulkImportController.getTemplate);
+router.get('/admin/photo-submissions', adminAuth, photoSubmissionsController.getPhotoSubmissions);
+router.post('/admin/photo-submissions/:id/approve', adminAuth, photoSubmissionsController.approvePhoto);
+router.post('/admin/photo-submissions/:id/reject', adminAuth, photoSubmissionsController.rejectPhoto);
 
 // Health check
 router.get('/health', (req, res) => {

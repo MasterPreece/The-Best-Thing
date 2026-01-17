@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import Toast from './Toast';
 import AccountPrompt from './AccountPrompt';
 import TrendingItems from './TrendingItems';
+import PhotoSubmissionModal from './PhotoSubmissionModal';
 import { ComparisonSkeleton } from './SkeletonLoader';
 import { animateNumber } from '../utils/numberAnimation';
 import './Comparison.css';
@@ -19,6 +20,7 @@ const Comparison = ({ userSessionId }) => {
   const [showAccountPrompt, setShowAccountPrompt] = useState(false);
   const [comparisonCount, setComparisonCount] = useState(0);
   const [globalStats, setGlobalStats] = useState(null);
+  const [showPhotoModal, setShowPhotoModal] = useState(null); // item1 or item2
   const { token, isAuthenticated } = useAuth();
   const statsRef = useRef(null);
 
@@ -409,6 +411,16 @@ const Comparison = ({ userSessionId }) => {
             ) : (
               <div className="item-placeholder">No Image</div>
             )}
+            <button
+              className="submit-photo-button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowPhotoModal('item1');
+              }}
+              title="Submit a photo for this item"
+            >
+              📷 Submit Photo
+            </button>
             {itemStats.item1 && (
               <div className="item-hover-stats">
                 <div className="hover-stat">
@@ -473,6 +485,16 @@ const Comparison = ({ userSessionId }) => {
             ) : (
               <div className="item-placeholder">No Image</div>
             )}
+            <button
+              className="submit-photo-button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowPhotoModal('item2');
+              }}
+              title="Submit a photo for this item"
+            >
+              📷 Submit Photo
+            </button>
             {itemStats.item2 && (
               <div className="item-hover-stats">
                 <div className="hover-stat">
@@ -524,6 +546,18 @@ const Comparison = ({ userSessionId }) => {
       </div>
 
       <TrendingItems />
+
+      {showPhotoModal && (
+        <PhotoSubmissionModal
+          item={showPhotoModal === 'item1' ? items.item1 : items.item2}
+          onClose={() => setShowPhotoModal(null)}
+          onSuccess={() => {
+            showToast('Photo submitted! It will be reviewed by an admin.', 'success');
+          }}
+          userSessionId={userSessionId}
+          token={token}
+        />
+      )}
     </div>
   );
 };
