@@ -116,8 +116,8 @@ async function gatherTopArticles(targetCount = TARGET_COUNT, category = null) {
   try {
     let continueToken = null;
     let fetched = 0;
-    const maxFeatured = 500;
-    const gatherTarget = targetCount * 2; // Gather 2x to ensure we have enough for sorting
+    const maxFeatured = Math.min(5000, Math.ceil(targetCount / 2)); // Get more for large targets
+    const gatherTarget = targetCount; // Use targetCount directly (already accounts for range)
     
     while (fetched < maxFeatured && allArticles.size < gatherTarget) {
       const params = {
@@ -162,8 +162,8 @@ async function gatherTopArticles(targetCount = TARGET_COUNT, category = null) {
   try {
     let continueToken = null;
     let fetched = 0;
-    const maxGood = 500;
-    const gatherTarget = targetCount * 2; // Gather 2x to ensure we have enough for sorting
+    const maxGood = Math.min(5000, Math.ceil(targetCount / 2)); // Get more for large targets
+    const gatherTarget = targetCount; // Use targetCount directly (already accounts for range)
     
     while (fetched < maxGood && allArticles.size < gatherTarget) {
       const params = {
@@ -216,9 +216,9 @@ async function gatherTopArticles(targetCount = TARGET_COUNT, category = null) {
     'Category:Technology'
   ];
   
-  const gatherTarget = targetCount * 2; // Gather 2x to ensure we have enough for sorting
-  // For large targetCounts, get more per category (up to 1000 per category)
-  const perCategoryLimit = Math.min(1000, Math.max(200, Math.ceil(targetCount / 10)));
+  const gatherTarget = targetCount; // Use targetCount directly (already accounts for range)
+  // For large targetCounts, get more per category (up to 2000 per category for very large targets)
+  const perCategoryLimit = Math.min(2000, Math.max(200, Math.ceil(targetCount / 4)));
   
   for (const category of popularCategories) {
     if (allArticles.size >= gatherTarget) break;
