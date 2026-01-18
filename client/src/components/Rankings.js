@@ -130,18 +130,9 @@ const Rankings = () => {
   return (
     <div className="rankings-container">
       <div className="rankings-header">
-        <div className="header-top-row">
-          <div>
-            <h1>🏆 The Best Things Ranking</h1>
-            <p>Based on community votes using Elo rating system</p>
-          </div>
-          <button 
-            className="submit-item-button" 
-            onClick={() => setShowItemModal(true)}
-            title="Submit a new item to be ranked"
-          >
-            ➕ Submit New Item
-          </button>
+        <div className="header-content">
+          <h1>🏆 The Best Things Ranking</h1>
+          <p>Based on community votes using Elo rating system</p>
         </div>
         
         <div className="search-container">
@@ -213,6 +204,16 @@ const Rankings = () => {
             )}
           </div>
         )}
+
+        <div className="submit-item-wrapper">
+          <button 
+            className="submit-item-button" 
+            onClick={() => setShowItemModal(true)}
+            title="Submit a new item to be ranked"
+          >
+            ➕ Submit New Item
+          </button>
+        </div>
       </div>
 
       {error && (
