@@ -10,17 +10,19 @@ const getRandomComparison = (req, res) => {
     console.error('Error checking/fetching Wikipedia items:', err);
   });
   
-  // Helper function to fetch from all items (truly random)
+  // Helper function to fetch from all items (weighted toward familiar items)
   const fetchFromAllItems = () => {
     const dbType = db.getDbType();
     if (dbType === 'postgres') {
-      // Try with categories join first, fallback to simple query if categories table doesn't exist
+      // Weight selection toward items with more comparisons (more familiar/recognizable)
+      // Uses weighted random: items with higher comparison_count are more likely to be selected
       db.query(`
-        SELECT i.id, i.title, i.image_url, i.description, i.elo_rating,
+        SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
                c.id as category_id, c.name as category_name, c.slug as category_slug
         FROM items i
         LEFT JOIN categories c ON i.category_id = c.id
-        ORDER BY RANDOM()
+        WHERE i.comparison_count >= 1 OR RANDOM() < 0.1
+        ORDER BY (i.comparison_count + 1) * RANDOM() DESC
         LIMIT 2
       `).then(result => {
         if (result.rows.length < 2) {
@@ -35,9 +37,10 @@ const getRandomComparison = (req, res) => {
         if (err.code === '42P01' || err.message.includes('does not exist')) {
           console.log('Categories table not found, using simple query');
           return db.query(`
-            SELECT id, title, image_url, description, elo_rating
+            SELECT id, title, image_url, description, elo_rating, comparison_count
             FROM items
-            ORDER BY RANDOM()
+            WHERE comparison_count >= 1 OR RANDOM() < 0.1
+            ORDER BY (comparison_count + 1) * RANDOM() DESC
             LIMIT 2
           `).then(result => {
             if (result.rows.length < 2) {
@@ -59,12 +62,14 @@ const getRandomComparison = (req, res) => {
     }
     
     // SQLite - try with categories join, fallback if needed
+    // Weight selection toward items with more comparisons (more familiar/recognizable)
     dbInstance.all(`
-      SELECT i.id, i.title, i.image_url, i.description, i.elo_rating,
+      SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
              c.id as category_id, c.name as category_name, c.slug as category_slug
       FROM items i
       LEFT JOIN categories c ON i.category_id = c.id
-      ORDER BY RANDOM()
+      WHERE i.comparison_count >= 1 OR (ABS(RANDOM()) % 10) < 1
+      ORDER BY (i.comparison_count + 1) * (ABS(RANDOM()) % 1000000) DESC
       LIMIT 2
     `, (err, rows) => {
       if (err) {
@@ -76,9 +81,10 @@ const getRandomComparison = (req, res) => {
             (err.code === 'SQLITE_ERROR' && errorStr.includes('category'))) {
           console.log('Categories not available, using simple query');
           return dbInstance.all(`
-            SELECT id, title, image_url, description, elo_rating
+            SELECT id, title, image_url, description, elo_rating, comparison_count
             FROM items
-            ORDER BY RANDOM()
+            WHERE comparison_count >= 1 OR (ABS(RANDOM()) % 10) < 1
+            ORDER BY (comparison_count + 1) * (ABS(RANDOM()) % 1000000) DESC
             LIMIT 2
           `, (fallbackErr, fallbackRows) => {
             if (fallbackErr) {
