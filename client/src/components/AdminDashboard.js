@@ -142,34 +142,88 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
             className="search-input"
           />
         </div>
-        <div className="button-group">
-          <button className="add-button" onClick={() => setShowAddModal(true)}>
-            ➕ Add New Item
-          </button>
-          <button className="bulk-import-button" onClick={() => setShowBulkImportModal(true)}>
-            📊 Bulk Import
-          </button>
-          <button className="bulk-lookup-button" onClick={() => setShowBulkLookupModal(true)}>
-            🔍 Bulk Lookup
-          </button>
-          <button className="seed-top2000-button" onClick={() => setShowSeedTop2000Modal(true)}>
-            🌱 Seed Top 2000
-          </button>
-          <button className="seed-popular-culture-button" onClick={() => setShowSeedPopularCultureModal(true)}>
-            🎬 Seed Popular Culture
-          </button>
-          <button className="update-images-button" onClick={() => setShowUpdateImagesModal(true)}>
-            🖼️ Update Images
-          </button>
-          <button className="assign-categories-button" onClick={() => setShowAssignCategoriesModal(true)}>
-            🏷️ Assign Categories
-          </button>
-          <button className="photo-submissions-button" onClick={() => setShowPhotoSubmissions(true)}>
-            📷 Photo Submissions
-          </button>
-          <button className="item-submissions-button" onClick={() => setShowItemSubmissions(true)}>
-            ➕ Item Submissions
-          </button>
+      </div>
+
+      <div className="admin-tools-section">
+        <h3 className="admin-tools-title">Admin Tools</h3>
+        
+        <div className="admin-tools-grid">
+          {/* Item Management */}
+          <div className="admin-tool-card" onClick={() => setShowAddModal(true)}>
+            <div className="tool-icon">➕</div>
+            <div className="tool-content">
+              <h4 className="tool-title">Add New Item</h4>
+              <p className="tool-description">Manually add a single item with title, description, image, and category.</p>
+            </div>
+          </div>
+
+          {/* Import & Lookup */}
+          <div className="admin-tool-card" onClick={() => setShowBulkImportModal(true)}>
+            <div className="tool-icon">📊</div>
+            <div className="tool-content">
+              <h4 className="tool-title">Bulk Import</h4>
+              <p className="tool-description">Upload CSV/Excel with complete item data (title, image, description, category).</p>
+            </div>
+          </div>
+
+          <div className="admin-tool-card" onClick={() => setShowBulkLookupModal(true)}>
+            <div className="tool-icon">🔍</div>
+            <div className="tool-content">
+              <h4 className="tool-title">Bulk Lookup</h4>
+              <p className="tool-description">Upload a list of titles - automatically searches Wikipedia and adds items.</p>
+            </div>
+          </div>
+
+          {/* Seeding */}
+          <div className="admin-tool-card" onClick={() => setShowSeedTop2000Modal(true)}>
+            <div className="tool-icon">🌱</div>
+            <div className="tool-content">
+              <h4 className="tool-title">Seed Top Articles</h4>
+              <p className="tool-description">Add popular Wikipedia articles sorted by pageviews. Great for initial database setup.</p>
+            </div>
+          </div>
+
+          <div className="admin-tool-card" onClick={() => setShowSeedPopularCultureModal(true)}>
+            <div className="tool-icon">🎬</div>
+            <div className="tool-content">
+              <h4 className="tool-title">Seed Popular Culture</h4>
+              <p className="tool-description">Add familiar items from TV, movies, celebrities, sports, brands, and more.</p>
+            </div>
+          </div>
+
+          {/* Maintenance */}
+          <div className="admin-tool-card" onClick={() => setShowUpdateImagesModal(true)}>
+            <div className="tool-icon">🖼️</div>
+            <div className="tool-content">
+              <h4 className="tool-title">Update Images</h4>
+              <p className="tool-description">Find and add images for items missing photos from Wikipedia or Unsplash.</p>
+            </div>
+          </div>
+
+          <div className="admin-tool-card" onClick={() => setShowAssignCategoriesModal(true)}>
+            <div className="tool-icon">🏷️</div>
+            <div className="tool-content">
+              <h4 className="tool-title">Assign Categories</h4>
+              <p className="tool-description">Intelligently assign categories to uncategorized items using Wikipedia data.</p>
+            </div>
+          </div>
+
+          {/* Submissions */}
+          <div className="admin-tool-card" onClick={() => setShowPhotoSubmissions(true)}>
+            <div className="tool-icon">📷</div>
+            <div className="tool-content">
+              <h4 className="tool-title">Photo Submissions</h4>
+              <p className="tool-description">Review and approve photos submitted by users for items without images.</p>
+            </div>
+          </div>
+
+          <div className="admin-tool-card" onClick={() => setShowItemSubmissions(true)}>
+            <div className="tool-icon">➕</div>
+            <div className="tool-content">
+              <h4 className="tool-title">Item Submissions</h4>
+              <p className="tool-description">Review and approve new items submitted by users for inclusion.</p>
+            </div>
+          </div>
         </div>
       </div>
 
