@@ -132,18 +132,6 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
         </div>
       )}
 
-      <div className="admin-controls">
-        <div className="search-box">
-          <input
-            type="text"
-            placeholder="Search items..."
-            value={search}
-            onChange={handleSearch}
-            className="search-input"
-          />
-        </div>
-      </div>
-
       <div className="admin-tools-section">
         <h3 className="admin-tools-title">Admin Tools</h3>
         
@@ -224,6 +212,18 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
               <p className="tool-description">Review and approve new items submitted by users for inclusion.</p>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="admin-controls">
+        <div className="search-box">
+          <input
+            type="text"
+            placeholder="Search items..."
+            value={search}
+            onChange={handleSearch}
+            className="search-input"
+          />
         </div>
       </div>
 
