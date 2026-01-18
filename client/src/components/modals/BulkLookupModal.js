@@ -13,7 +13,7 @@ const BulkLookupModal = ({ onClose, onSuccess, api, initialCsvData }) => {
       const csvFile = new File([blob], `llm-query-${Date.now()}.csv`, { type: 'text/csv' });
       setFile(csvFile);
     }
-  }, [initialCsvData]);
+  }, [initialCsvData, file]);
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];

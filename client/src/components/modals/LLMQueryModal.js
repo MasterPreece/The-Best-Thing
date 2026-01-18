@@ -8,7 +8,6 @@ const LLMQueryModal = ({ onClose, onSuccess, api }) => {
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
   const [csvData, setCsvData] = useState('');
-  const [showBulkLookup, setShowBulkLookup] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
