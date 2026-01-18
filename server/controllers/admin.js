@@ -1,4 +1,5 @@
 const db = require('../database');
+const { queryMany, queryOne, insertAndReturn, updateAndReturn, deleteRecord } = require('../utils/db-helpers');
 const seedCategoriesFunction = require('../scripts/seed-categories-wrapper');
 const seedTop2000Function = require('../scripts/seed-top-2000-wrapper');
 const { seedPopularCulture } = require('../scripts/seed-popular-culture');
@@ -157,99 +158,89 @@ const getAdminItems = async (req, res) => {
     const search = req.query.search || '';
     const offset = (page - 1) * limit;
     
-    const dbType = db.getDbType();
-    console.log('[Admin] Database type:', dbType);
     let items, total;
     
-    if (dbType === 'postgres') {
-      if (search) {
-        const searchTerm = `%${search}%`;
-        const itemsResult = await db.query(`
+    if (search) {
+      // For SQLite compatibility, lowercase the search term and use simpler LIKE
+      const searchLower = search.toLowerCase();
+      const searchTerm = `%${searchLower}%`;
+      
+      try {
+        // Try with categories first
+        items = await queryMany(`
           SELECT i.id, i.title, i.image_url, i.description, i.category_id, i.elo_rating, i.comparison_count, i.wins, i.losses, i.created_at,
                  c.name as category_name, c.slug as category_slug
           FROM items i
           LEFT JOIN categories c ON i.category_id = c.id
-          WHERE LOWER(i.title) LIKE LOWER($1) OR LOWER(i.description) LIKE LOWER($1)
+          WHERE LOWER(i.title) LIKE ? OR LOWER(i.description) LIKE ?
           ORDER BY i.created_at DESC
-          LIMIT $2 OFFSET $3
-        `, [searchTerm, limit, offset]);
+          LIMIT ? OFFSET ?
+        `, [searchTerm, searchTerm, limit, offset]);
         
-        const countResult = await db.query(`
+        const countResult = await queryOne(`
           SELECT COUNT(*) as total
           FROM items
-          WHERE LOWER(title) LIKE LOWER($1) OR LOWER(description) LIKE LOWER($1)
-        `, [searchTerm]);
+          WHERE LOWER(title) LIKE ? OR LOWER(description) LIKE ?
+        `, [searchTerm, searchTerm]);
         
-        items = itemsResult.rows;
-        total = parseInt(countResult.rows[0]?.total || 0);
-      } else {
-        const itemsResult = await db.query(`
+        total = parseInt(countResult?.total || 0);
+      } catch (err) {
+        // If categories column doesn't exist, use simple query
+        const errorStr = err.message || err.toString() || '';
+        if (errorStr.includes('no such column') || errorStr.includes('category_id') ||
+            (err.code === 'SQLITE_ERROR' && errorStr.includes('category'))) {
+          console.log('[Admin] Categories not available, using simple query');
+          items = await queryMany(`
+            SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses, created_at
+            FROM items
+            WHERE LOWER(title) LIKE ? OR LOWER(description) LIKE ?
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+          `, [searchTerm, searchTerm, limit, offset]);
+          
+          const countResult = await queryOne(`
+            SELECT COUNT(*) as total
+            FROM items
+            WHERE LOWER(title) LIKE ? OR LOWER(description) LIKE ?
+          `, [searchTerm, searchTerm]);
+          
+          total = parseInt(countResult?.total || 0);
+        } else {
+          throw err;
+        }
+      }
+    } else {
+      try {
+        // Try with categories first
+        items = await queryMany(`
           SELECT i.id, i.title, i.image_url, i.description, i.category_id, i.elo_rating, i.comparison_count, i.wins, i.losses, i.created_at,
                  c.name as category_name, c.slug as category_slug
           FROM items i
           LEFT JOIN categories c ON i.category_id = c.id
           ORDER BY i.created_at DESC
-          LIMIT $1 OFFSET $2
+          LIMIT ? OFFSET ?
         `, [limit, offset]);
         
-        const countResult = await db.query(`SELECT COUNT(*) as total FROM items`);
-        
-        items = itemsResult.rows;
-        total = parseInt(countResult.rows[0]?.total || 0);
-      }
-    } else {
-      const dbInstance = db.getDb();
-      
-      if (search) {
-        const searchTerm = `%${search}%`;
-        items = await new Promise((resolve, reject) => {
-          dbInstance.all(`
-            SELECT i.id, i.title, i.image_url, i.description, i.category_id, i.elo_rating, i.comparison_count, i.wins, i.losses, i.created_at,
-                   c.name as category_name, c.slug as category_slug
-            FROM items i
-            LEFT JOIN categories c ON i.category_id = c.id
-            WHERE LOWER(i.title) LIKE LOWER(?) OR LOWER(i.description) LIKE LOWER(?)
-            ORDER BY i.created_at DESC
-            LIMIT ? OFFSET ?
-          `, [searchTerm, searchTerm, limit, offset], (err, rows) => {
-            if (err) reject(err);
-            else resolve(rows || []);
-          });
-        });
-        
-        const countRow = await new Promise((resolve, reject) => {
-          dbInstance.get(`
-            SELECT COUNT(*) as total
+        const countResult = await queryOne(`SELECT COUNT(*) as total FROM items`);
+        total = parseInt(countResult?.total || 0);
+      } catch (err) {
+        // If categories column doesn't exist, use simple query
+        const errorStr = err.message || err.toString() || '';
+        if (errorStr.includes('no such column') || errorStr.includes('category_id') ||
+            (err.code === 'SQLITE_ERROR' && errorStr.includes('category'))) {
+          console.log('[Admin] Categories not available, using simple query');
+          items = await queryMany(`
+            SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses, created_at
             FROM items
-            WHERE LOWER(title) LIKE LOWER(?) OR LOWER(description) LIKE LOWER(?)
-          `, [searchTerm, searchTerm], (err, row) => {
-            if (err) reject(err);
-            else resolve(row);
-          });
-        });
-        total = countRow ? countRow.total : 0;
-      } else {
-        items = await new Promise((resolve, reject) => {
-          dbInstance.all(`
-            SELECT i.id, i.title, i.image_url, i.description, i.category_id, i.elo_rating, i.comparison_count, i.wins, i.losses, i.created_at,
-                   c.name as category_name, c.slug as category_slug
-            FROM items i
-            LEFT JOIN categories c ON i.category_id = c.id
-            ORDER BY i.created_at DESC
+            ORDER BY created_at DESC
             LIMIT ? OFFSET ?
-          `, [limit, offset], (err, rows) => {
-            if (err) reject(err);
-            else resolve(rows || []);
-          });
-        });
-        
-        const countRow = await new Promise((resolve, reject) => {
-          dbInstance.get(`SELECT COUNT(*) as total FROM items`, [], (err, row) => {
-            if (err) reject(err);
-            else resolve(row);
-          });
-        });
-        total = countRow ? countRow.total : 0;
+          `, [limit, offset]);
+          
+          const countResult = await queryOne(`SELECT COUNT(*) as total FROM items`);
+          total = parseInt(countResult?.total || 0);
+        } else {
+          throw err;
+        }
       }
     }
     
@@ -286,49 +277,28 @@ const createItem = async (req, res) => {
       return res.status(400).json({ error: 'Title is required' });
     }
     
-    const dbType = db.getDbType();
-    let result;
-    
-    if (dbType === 'postgres') {
-      result = await db.query(`
-        INSERT INTO items (wikipedia_id, title, image_url, description, category_id)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, title, image_url, description, category_id, elo_rating, comparison_count, wins, losses, created_at
-      `, [wikipediaId || null, title.trim(), imageUrl || null, description || null, categoryId || null]);
+    try {
+      const item = await insertAndReturn(
+        'items',
+        {
+          wikipedia_id: wikipediaId || null,
+          title: title.trim(),
+          image_url: imageUrl || null,
+          description: description || null,
+          category_id: categoryId || null
+        },
+        'id, title, image_url, description, category_id, elo_rating, comparison_count, wins, losses, created_at'
+      );
       
-      res.json({ success: true, item: result.rows[0] });
-    } else {
-      const dbInstance = db.getDb();
-      try {
-        const item = await new Promise((resolve, reject) => {
-          dbInstance.run(`
-            INSERT INTO items (wikipedia_id, title, image_url, description, category_id)
-            VALUES (?, ?, ?, ?, ?)
-          `, [wikipediaId || null, title.trim(), imageUrl || null, description || null, categoryId || null], function(err) {
-            if (err) {
-              if (err.message.includes('UNIQUE constraint')) {
-                return reject({ statusCode: 400, message: 'An item with this title already exists' });
-              }
-              reject(err);
-            } else {
-            // Fetch the created item
-            dbInstance.get(`
-              SELECT id, title, image_url, description, category_id, elo_rating, comparison_count, wins, losses, created_at
-              FROM items WHERE id = ?
-            `, [this.lastID], (err, row) => {
-                if (err) reject(err);
-                else resolve(row);
-              });
-            }
-          });
-        });
-        res.json({ success: true, item });
-      } catch (err) {
-        if (err.statusCode === 400) {
-          return res.status(400).json({ error: err.message });
-        }
-        throw err;
+      res.json({ success: true, item });
+    } catch (err) {
+      if (err.statusCode === 400) {
+        return res.status(400).json({ error: err.message });
       }
+      if (err.message?.includes('UNIQUE') || err.code === '23505') {
+        return res.status(400).json({ error: 'An item with this title already exists' });
+      }
+      throw err;
     }
   } catch (error) {
     console.error('Error creating item:', error);
@@ -352,59 +322,36 @@ const updateItem = async (req, res) => {
       return res.status(400).json({ error: 'Title is required' });
     }
     
-    const dbType = db.getDbType();
-    
-    if (dbType === 'postgres') {
-      const result = await db.query(`
-        UPDATE items
-        SET title = $1, image_url = $2, description = $3, wikipedia_id = $4, category_id = $5
-        WHERE id = $6
-        RETURNING id, title, image_url, description, category_id, elo_rating, comparison_count, wins, losses, created_at
-      `, [title.trim(), imageUrl || null, description || null, wikipediaId || null, categoryId || null, id]);
+    try {
+      const item = await updateAndReturn(
+        'items',
+        id,
+        {
+          title: title.trim(),
+          image_url: imageUrl || null,
+          description: description || null,
+          wikipedia_id: wikipediaId || null,
+          category_id: categoryId || null
+        },
+        'id, title, image_url, description, category_id, elo_rating, comparison_count, wins, losses, created_at'
+      );
       
-      if (result.rows.length === 0) {
+      if (!item) {
         return res.status(404).json({ error: 'Item not found' });
       }
       
-      res.json({ success: true, item: result.rows[0] });
-    } else {
-      const dbInstance = db.getDb();
-        try {
-        const item = await new Promise((resolve, reject) => {
-          dbInstance.run(`
-            UPDATE items
-            SET title = ?, image_url = ?, description = ?, wikipedia_id = ?, category_id = ?
-            WHERE id = ?
-          `, [title.trim(), imageUrl || null, description || null, wikipediaId || null, categoryId || null, id], function(err) {
-            if (err) {
-              if (err.message.includes('UNIQUE constraint')) {
-                return reject({ statusCode: 400, message: 'An item with this title already exists' });
-              }
-              reject(err);
-            } else if (this.changes === 0) {
-              return reject({ statusCode: 404, message: 'Item not found' });
-            } else {
-              // Fetch the updated item
-              dbInstance.get(`
-                SELECT id, title, image_url, description, category_id, elo_rating, comparison_count, wins, losses, created_at
-                FROM items WHERE id = ?
-              `, [id], (err, row) => {
-                if (err) reject(err);
-                else resolve(row);
-              });
-            }
-          });
-        });
-        res.json({ success: true, item });
-      } catch (err) {
-        if (err.statusCode === 400) {
-          return res.status(400).json({ error: err.message });
-        }
-        if (err.statusCode === 404) {
-          return res.status(404).json({ error: err.message });
-        }
-        throw err;
+      res.json({ success: true, item });
+    } catch (err) {
+      if (err.statusCode === 400) {
+        return res.status(400).json({ error: err.message });
       }
+      if (err.statusCode === 404) {
+        return res.status(404).json({ error: err.message });
+      }
+      if (err.message?.includes('UNIQUE') || err.code === '23505') {
+        return res.status(400).json({ error: 'An item with this title already exists' });
+      }
+      throw err;
     }
   } catch (error) {
     console.error('Error updating item:', error);
@@ -422,37 +369,14 @@ const updateItem = async (req, res) => {
 const deleteItem = async (req, res) => {
   try {
     const { id } = req.params;
-    const dbType = db.getDbType();
     
-    if (dbType === 'postgres') {
-      const result = await db.query(`DELETE FROM items WHERE id = $1 RETURNING id`, [id]);
-      
-      if (result.rows.length === 0) {
-        return res.status(404).json({ error: 'Item not found' });
-      }
-      
-      res.json({ success: true, message: 'Item deleted' });
-    } else {
-      const dbInstance = db.getDb();
-      try {
-        await new Promise((resolve, reject) => {
-          dbInstance.run(`DELETE FROM items WHERE id = ?`, [id], function(err) {
-            if (err) reject(err);
-            else if (this.changes === 0) {
-              return reject({ statusCode: 404, message: 'Item not found' });
-            } else {
-              resolve();
-            }
-          });
-        });
-        res.json({ success: true, message: 'Item deleted' });
-      } catch (err) {
-        if (err.statusCode === 404) {
-          return res.status(404).json({ error: err.message });
-        }
-        throw err;
-      }
+    const deleted = await deleteRecord('items', id);
+    
+    if (!deleted) {
+      return res.status(404).json({ error: 'Item not found' });
     }
+    
+    res.json({ success: true, message: 'Item deleted' });
   } catch (error) {
     console.error('Error deleting item:', error);
     res.status(500).json({ error: 'Failed to delete item', message: error.message });

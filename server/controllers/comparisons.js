@@ -11,11 +11,11 @@ const getRandomComparison = (req, res) => {
   });
   
   // Helper function to fetch from all items (weighted toward familiar items)
+  // Ensures item1 != item2 and better variety
   const fetchFromAllItems = () => {
     const dbType = db.getDbType();
     if (dbType === 'postgres') {
-      // Weight selection toward items with more comparisons (more familiar/recognizable)
-      // Uses weighted random: items with higher comparison_count are more likely to be selected
+      // Get more items (10) and randomly pick 2 to ensure variety
       db.query(`
         SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
                c.id as category_id, c.name as category_name, c.slug as category_slug
@@ -23,14 +23,24 @@ const getRandomComparison = (req, res) => {
         LEFT JOIN categories c ON i.category_id = c.id
         WHERE i.comparison_count >= 1 OR RANDOM() < 0.1
         ORDER BY (i.comparison_count + 1) * RANDOM() DESC
-        LIMIT 2
+        LIMIT 10
       `).then(result => {
         if (result.rows.length < 2) {
           return res.status(404).json({ error: 'Not enough items in database' });
         }
+        // Shuffle and pick 2 different items
+        const shuffled = result.rows.sort(() => Math.random() - 0.5);
+        let item1 = shuffled[0];
+        let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+        
+        // Ensure they're different
+        if (item1.id === item2.id && shuffled.length > 1) {
+          item2 = shuffled[1];
+        }
+        
         res.json({
-          item1: result.rows[0],
-          item2: result.rows[1]
+          item1,
+          item2
         });
       }).catch(err => {
         // If categories table doesn't exist, fallback to simple query
@@ -41,14 +51,20 @@ const getRandomComparison = (req, res) => {
             FROM items
             WHERE comparison_count >= 1 OR RANDOM() < 0.1
             ORDER BY (comparison_count + 1) * RANDOM() DESC
-            LIMIT 2
+            LIMIT 10
           `).then(result => {
             if (result.rows.length < 2) {
               return res.status(404).json({ error: 'Not enough items in database' });
             }
+            const shuffled = result.rows.sort(() => Math.random() - 0.5);
+            let item1 = shuffled[0];
+            let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+            if (item1.id === item2.id && shuffled.length > 1) {
+              item2 = shuffled[1];
+            }
             res.json({
-              item1: result.rows[0],
-              item2: result.rows[1]
+              item1,
+              item2
             });
           }).catch(fallbackErr => {
             console.error('Error fetching comparison:', fallbackErr);
@@ -70,7 +86,7 @@ const getRandomComparison = (req, res) => {
       LEFT JOIN categories c ON i.category_id = c.id
       WHERE i.comparison_count >= 1 OR (ABS(RANDOM()) % 10) < 1
       ORDER BY (i.comparison_count + 1) * (ABS(RANDOM()) % 1000000) DESC
-      LIMIT 2
+      LIMIT 10
     `, (err, rows) => {
       if (err) {
         // If categories table/column doesn't exist, fallback to simple query
@@ -85,7 +101,7 @@ const getRandomComparison = (req, res) => {
             FROM items
             WHERE comparison_count >= 1 OR (ABS(RANDOM()) % 10) < 1
             ORDER BY (comparison_count + 1) * (ABS(RANDOM()) % 1000000) DESC
-            LIMIT 2
+            LIMIT 10
           `, (fallbackErr, fallbackRows) => {
             if (fallbackErr) {
               console.error('Error fetching comparison:', fallbackErr);
@@ -94,9 +110,15 @@ const getRandomComparison = (req, res) => {
             if (fallbackRows.length < 2) {
               return res.status(404).json({ error: 'Not enough items in database' });
             }
+            const shuffled = fallbackRows.sort(() => Math.random() - 0.5);
+            let item1 = shuffled[0];
+            let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+            if (item1.id === item2.id && shuffled.length > 1) {
+              item2 = shuffled[1];
+            }
             res.json({
-              item1: fallbackRows[0],
-              item2: fallbackRows[1]
+              item1,
+              item2
             });
           });
         }
@@ -108,9 +130,17 @@ const getRandomComparison = (req, res) => {
         return res.status(404).json({ error: 'Not enough items in database' });
       }
       
+      // Shuffle and pick 2 different items
+      const shuffled = rows.sort(() => Math.random() - 0.5);
+      let item1 = shuffled[0];
+      let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+      if (item1.id === item2.id && shuffled.length > 1) {
+        item2 = shuffled[1];
+      }
+      
       res.json({
-        item1: rows[0],
-        item2: rows[1]
+        item1,
+        item2
       });
     });
   };
@@ -138,11 +168,16 @@ const getRandomComparison = (req, res) => {
         LIMIT 20
       `).then(result => {
         if (result.rows.length >= 2) {
-          // Randomly pick 2 from the top candidates
-          const shuffled = result.rows.sort(() => 0.5 - Math.random());
+          // Randomly pick 2 from the top candidates, ensuring they're different
+          const shuffled = result.rows.sort(() => Math.random() - 0.5);
+          let item1 = shuffled[0];
+          let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+          if (item1.id === item2.id && shuffled.length > 1) {
+            item2 = shuffled[1];
+          }
           return res.json({
-            item1: shuffled[0],
-            item2: shuffled[1]
+            item1,
+            item2
           });
         }
         return fetchFromAllItems();
@@ -162,10 +197,15 @@ const getRandomComparison = (req, res) => {
       if (err || !rows || rows.length < 2) {
         return fetchFromAllItems();
       }
-      const shuffled = rows.sort(() => 0.5 - Math.random());
+      const shuffled = rows.sort(() => Math.random() - 0.5);
+      let item1 = shuffled[0];
+      let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+      if (item1.id === item2.id && shuffled.length > 1) {
+        item2 = shuffled[1];
+      }
       res.json({
-        item1: shuffled[0],
-        item2: shuffled[1]
+        item1,
+        item2
       });
     });
   };
@@ -189,10 +229,15 @@ const getRandomComparison = (req, res) => {
         LIMIT 20
       `).then(result => {
         if (result.rows.length >= 2) {
-          const shuffled = result.rows.sort(() => 0.5 - Math.random());
+          const shuffled = result.rows.sort(() => Math.random() - 0.5);
+          let item1 = shuffled[0];
+          let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+          if (item1.id === item2.id && shuffled.length > 1) {
+            item2 = shuffled[1];
+          }
           return res.json({
-            item1: shuffled[0],
-            item2: shuffled[1]
+            item1,
+            item2
           });
         }
         // Fallback to items needing votes if no recent activity
@@ -217,10 +262,15 @@ const getRandomComparison = (req, res) => {
       if (err || !rows || rows.length < 2) {
         return fetchItemsNeedingVotes();
       }
-      const shuffled = rows.sort(() => 0.5 - Math.random());
+      const shuffled = rows.sort(() => Math.random() - 0.5);
+      let item1 = shuffled[0];
+      let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+      if (item1.id === item2.id && shuffled.length > 1) {
+        item2 = shuffled[1];
+      }
       res.json({
-        item1: shuffled[0],
-        item2: shuffled[1]
+        item1,
+        item2
       });
     });
   };
@@ -257,9 +307,15 @@ const getRandomComparison = (req, res) => {
         LIMIT 2
       `).then(result => {
         if (result.rows.length >= 2) {
+          // Ensure items are different
+          let item1 = result.rows[0];
+          let item2 = result.rows.find(item => item.id !== item1.id) || result.rows[1];
+          if (item1.id === item2.id && result.rows.length > 1) {
+            item2 = result.rows[1];
+          }
           res.json({
-            item1: result.rows[0],
-            item2: result.rows[1]
+            item1,
+            item2
           });
         } else {
           fetchFromAllItems();
@@ -273,12 +329,18 @@ const getRandomComparison = (req, res) => {
             FROM items
             WHERE description IS NOT NULL AND description != ''
             ORDER BY RANDOM()
-            LIMIT 2
+            LIMIT 10
           `).then(result => {
             if (result.rows.length >= 2) {
+              const shuffled = result.rows.sort(() => Math.random() - 0.5);
+              let item1 = shuffled[0];
+              let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+              if (item1.id === item2.id && shuffled.length > 1) {
+                item2 = shuffled[1];
+              }
               res.json({
-                item1: result.rows[0],
-                item2: result.rows[1]
+                item1,
+                item2
               });
             } else {
               fetchFromAllItems();
@@ -301,7 +363,7 @@ const getRandomComparison = (req, res) => {
       LEFT JOIN categories c ON i.category_id = c.id
       WHERE i.description IS NOT NULL AND i.description != ''
       ORDER BY RANDOM()
-      LIMIT 2
+      LIMIT 10
     `, (err, rows) => {
       if (err) {
         // If categories table/column doesn't exist, fallback to simple query
@@ -316,16 +378,22 @@ const getRandomComparison = (req, res) => {
             FROM items
             WHERE description IS NOT NULL AND description != ''
             ORDER BY RANDOM()
-            LIMIT 2
+            LIMIT 10
           `, (fallbackErr, fallbackRows) => {
             if (fallbackErr) {
               console.error('Error fetching comparison:', fallbackErr);
               return res.status(500).json({ error: 'Failed to fetch comparison' });
             }
             if (fallbackRows.length >= 2) {
+              const shuffled = fallbackRows.sort(() => Math.random() - 0.5);
+              let item1 = shuffled[0];
+              let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+              if (item1.id === item2.id && shuffled.length > 1) {
+                item2 = shuffled[1];
+              }
               return res.json({
-                item1: fallbackRows[0],
-                item2: fallbackRows[1]
+                item1,
+                item2
               });
             }
             fetchFromAllItems();
@@ -335,11 +403,17 @@ const getRandomComparison = (req, res) => {
         return res.status(500).json({ error: 'Failed to fetch comparison' });
       }
       
-      // If we got 2 items with descriptions, use them
+      // If we got items with descriptions, shuffle and pick 2 different ones
       if (rows.length >= 2) {
+        const shuffled = rows.sort(() => Math.random() - 0.5);
+        let item1 = shuffled[0];
+        let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+        if (item1.id === item2.id && shuffled.length > 1) {
+          item2 = shuffled[1];
+        }
         return res.json({
-          item1: rows[0],
-          item2: rows[1]
+          item1,
+          item2
         });
       }
       

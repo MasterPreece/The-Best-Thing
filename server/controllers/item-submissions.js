@@ -121,51 +121,64 @@ const getItemSubmissions = async (req, res) => {
     let submissions = [];
     let total = 0;
 
-    if (dbType === 'postgres') {
-      const result = await db.query(`
-        SELECT is.id, is.title, is.description, is.image_url, is.wikipedia_url, is.status,
-               is.submitted_at, is.reviewed_at, is.reviewed_by, is.rejection_reason,
-               is.category_id, c.name as category_name,
-               u.username as submitter_username
-        FROM item_submissions is
-        LEFT JOIN categories c ON is.category_id = c.id
-        LEFT JOIN users u ON is.user_id = u.id
-        WHERE is.status = $1
-        ORDER BY is.submitted_at DESC
-        LIMIT $2 OFFSET $3
-      `, [status, limit, offset]);
-
-      submissions = result.rows || [];
-
-      const countResult = await db.query(`
-        SELECT COUNT(*) as total FROM item_submissions WHERE status = $1
-      `, [status]);
-      total = parseInt(countResult.rows[0]?.total || 0);
-    } else {
-      submissions = await new Promise((resolve, reject) => {
-        dbInstance.all(`
-          SELECT is.id, is.title, is.description, is.image_url, is.wikipedia_url, is.status,
-                 is.submitted_at, is.reviewed_at, is.reviewed_by, is.rejection_reason,
-                 is.category_id, c.name as category_name,
+    try {
+      if (dbType === 'postgres') {
+        const result = await db.query(`
+          SELECT its.id, its.title, its.description, its.image_url, its.wikipedia_url, its.status,
+                 its.submitted_at, its.reviewed_at, its.reviewed_by, its.rejection_reason,
+                 its.category_id, c.name as category_name,
                  u.username as submitter_username
-          FROM item_submissions is
-          LEFT JOIN categories c ON is.category_id = c.id
-          LEFT JOIN users u ON is.user_id = u.id
-          WHERE is.status = ?
-          ORDER BY is.submitted_at DESC
-          LIMIT ? OFFSET ?
-        `, [status, limit, offset], (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
-        });
-      });
+          FROM item_submissions its
+          LEFT JOIN categories c ON its.category_id = c.id
+          LEFT JOIN users u ON its.user_id = u.id
+          WHERE its.status = $1
+          ORDER BY its.submitted_at DESC
+          LIMIT $2 OFFSET $3
+        `, [status, limit, offset]);
 
-      const countRow = await new Promise((resolve) => {
-        dbInstance.get('SELECT COUNT(*) as total FROM item_submissions WHERE status = ?', [status], (err, row) => {
-          resolve(err ? null : row);
+        submissions = result.rows || [];
+
+        const countResult = await db.query(`
+          SELECT COUNT(*) as total FROM item_submissions WHERE status = $1
+        `, [status]);
+        total = parseInt(countResult.rows[0]?.total || 0);
+      } else {
+        submissions = await new Promise((resolve, reject) => {
+          dbInstance.all(`
+            SELECT its.id, its.title, its.description, its.image_url, its.wikipedia_url, its.status,
+                   its.submitted_at, its.reviewed_at, its.reviewed_by, its.rejection_reason,
+                   its.category_id, c.name as category_name,
+                   u.username as submitter_username
+            FROM item_submissions its
+            LEFT JOIN categories c ON its.category_id = c.id
+            LEFT JOIN users u ON its.user_id = u.id
+            WHERE its.status = ?
+            ORDER BY its.submitted_at DESC
+            LIMIT ? OFFSET ?
+          `, [status, limit, offset], (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+          });
         });
-      });
-      total = countRow ? countRow.total : 0;
+
+        const countRow = await new Promise((resolve) => {
+          dbInstance.get('SELECT COUNT(*) as total FROM item_submissions WHERE status = ?', [status], (err, row) => {
+            resolve(err ? null : row);
+          });
+        });
+        total = countRow ? countRow.total : 0;
+      }
+    } catch (tableError) {
+      // Table doesn't exist yet - return empty results
+      const errorStr = tableError.message || tableError.toString() || '';
+      if (errorStr.includes('no such table') || errorStr.includes('item_submissions') ||
+          (tableError.code === 'SQLITE_ERROR' && errorStr.includes('item'))) {
+        console.log('[Item Submissions] Table not available yet, returning empty results');
+        submissions = [];
+        total = 0;
+      } else {
+        throw tableError;
+      }
     }
 
     res.json({

@@ -130,29 +130,9 @@ const getPhotoSubmissions = async (req, res) => {
     let submissions = [];
     let total = 0;
 
-    if (dbType === 'postgres') {
-      const result = await db.query(`
-        SELECT ps.id, ps.item_id, ps.user_id, ps.user_session_id, ps.image_url, ps.status,
-               ps.submitted_at, ps.reviewed_at, ps.reviewed_by,
-               i.title as item_title, i.image_url as current_image_url,
-               u.username as submitter_username
-        FROM photo_submissions ps
-        JOIN items i ON ps.item_id = i.id
-        LEFT JOIN users u ON ps.user_id = u.id
-        WHERE ps.status = $1
-        ORDER BY ps.submitted_at DESC
-        LIMIT $2 OFFSET $3
-      `, [status, limit, offset]);
-
-      submissions = result.rows || [];
-
-      const countResult = await db.query(`
-        SELECT COUNT(*) as total FROM photo_submissions WHERE status = $1
-      `, [status]);
-      total = parseInt(countResult.rows[0]?.total || 0);
-    } else {
-      submissions = await new Promise((resolve, reject) => {
-        dbInstance.all(`
+    try {
+      if (dbType === 'postgres') {
+        const result = await db.query(`
           SELECT ps.id, ps.item_id, ps.user_id, ps.user_session_id, ps.image_url, ps.status,
                  ps.submitted_at, ps.reviewed_at, ps.reviewed_by,
                  i.title as item_title, i.image_url as current_image_url,
@@ -160,21 +140,54 @@ const getPhotoSubmissions = async (req, res) => {
           FROM photo_submissions ps
           JOIN items i ON ps.item_id = i.id
           LEFT JOIN users u ON ps.user_id = u.id
-          WHERE ps.status = ?
+          WHERE ps.status = $1
           ORDER BY ps.submitted_at DESC
-          LIMIT ? OFFSET ?
-        `, [status, limit, offset], (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
-        });
-      });
+          LIMIT $2 OFFSET $3
+        `, [status, limit, offset]);
 
-      const countRow = await new Promise((resolve) => {
-        dbInstance.get('SELECT COUNT(*) as total FROM photo_submissions WHERE status = ?', [status], (err, row) => {
-          resolve(err ? null : row);
+        submissions = result.rows || [];
+
+        const countResult = await db.query(`
+          SELECT COUNT(*) as total FROM photo_submissions WHERE status = $1
+        `, [status]);
+        total = parseInt(countResult.rows[0]?.total || 0);
+      } else {
+        submissions = await new Promise((resolve, reject) => {
+          dbInstance.all(`
+            SELECT ps.id, ps.item_id, ps.user_id, ps.user_session_id, ps.image_url, ps.status,
+                   ps.submitted_at, ps.reviewed_at, ps.reviewed_by,
+                   i.title as item_title, i.image_url as current_image_url,
+                   u.username as submitter_username
+            FROM photo_submissions ps
+            JOIN items i ON ps.item_id = i.id
+            LEFT JOIN users u ON ps.user_id = u.id
+            WHERE ps.status = ?
+            ORDER BY ps.submitted_at DESC
+            LIMIT ? OFFSET ?
+          `, [status, limit, offset], (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+          });
         });
-      });
-      total = countRow ? countRow.total : 0;
+
+        const countRow = await new Promise((resolve) => {
+          dbInstance.get('SELECT COUNT(*) as total FROM photo_submissions WHERE status = ?', [status], (err, row) => {
+            resolve(err ? null : row);
+          });
+        });
+        total = countRow ? countRow.total : 0;
+      }
+    } catch (tableError) {
+      // Table doesn't exist yet - return empty results
+      const errorStr = tableError.message || tableError.toString() || '';
+      if (errorStr.includes('no such table') || errorStr.includes('photo_submissions') ||
+          (tableError.code === 'SQLITE_ERROR' && errorStr.includes('photo'))) {
+        console.log('[Photo Submissions] Table not available yet, returning empty results');
+        submissions = [];
+        total = 0;
+      } else {
+        throw tableError;
+      }
     }
 
     res.json({
