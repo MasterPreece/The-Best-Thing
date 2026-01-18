@@ -3,6 +3,19 @@ const { OpenAI } = require('openai');
 // Get API key from environment
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || null;
 
+// Debug logging (remove after fixing)
+if (process.env.NODE_ENV === 'production') {
+  console.log('[LLM Query] Environment check:');
+  console.log('  - OPENAI_API_KEY exists:', !!process.env.OPENAI_API_KEY);
+  console.log('  - OPENAI_API_KEY length:', process.env.OPENAI_API_KEY ? process.env.OPENAI_API_KEY.length : 0);
+  console.log('  - OPENAI_API_KEY starts with sk-:', process.env.OPENAI_API_KEY ? process.env.OPENAI_API_KEY.startsWith('sk-') : false);
+  // Log all env vars that contain 'OPEN' or 'AI' (for debugging)
+  const relevantVars = Object.keys(process.env).filter(key => 
+    key.includes('OPEN') || key.includes('AI') || key.includes('LLM')
+  );
+  console.log('  - Relevant env vars:', relevantVars);
+}
+
 // Initialize OpenAI client (will fail gracefully if no key)
 const openai = OPENAI_API_KEY ? new OpenAI({
   apiKey: OPENAI_API_KEY
