@@ -119,6 +119,7 @@
 
 .add-button,
 .bulk-import-button,
+.bulk-lookup-button,
 .update-images-button,
 .assign-categories-button {
   padding: 12px 24px;
@@ -130,6 +131,10 @@
   font-weight: 600;
   cursor: pointer;
   transition: transform 0.2s;
+}
+
+.bulk-lookup-button {
+  background: linear-gradient(135deg, #00b894 0%, #00a085 100%);
 }
 
 .seed-top2000-button {
@@ -181,6 +186,7 @@
 
 .add-button:hover,
 .bulk-import-button:hover,
+.bulk-lookup-button:hover,
 .seed-top2000-button:hover,
 .update-images-button:hover,
 .assign-categories-button:hover {
