@@ -89,6 +89,7 @@ router.post('/admin/login', adminLogin);
 // Protected admin endpoints (require admin password)
 router.post('/admin/seed-categories', adminAuth, adminController.triggerSeedCategories);
 router.post('/admin/seed-top2000', adminAuth, adminController.triggerSeedTop2000);
+router.post('/admin/seed-popular-culture', adminAuth, adminController.triggerSeedPopularCulture);
 router.post('/admin/update-images', adminAuth, adminController.triggerUpdateImages);
 router.post('/admin/assign-categories', adminAuth, adminController.triggerAssignCategories);
 router.get('/admin/items', adminAuth, adminController.getAdminItems);

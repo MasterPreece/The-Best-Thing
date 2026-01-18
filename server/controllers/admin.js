@@ -1,6 +1,7 @@
 const db = require('../database');
 const seedCategoriesFunction = require('../scripts/seed-categories-wrapper');
 const seedTop2000Function = require('../scripts/seed-top-2000-wrapper');
+const { seedPopularCulture } = require('../scripts/seed-popular-culture');
 const { assignDefaultCategories } = require('../scripts/assign-default-categories');
 const { assignIntelligentCategories } = require('../scripts/assign-intelligent-categories');
 const { updateMissingImages } = require('../scripts/update-missing-images');
@@ -563,9 +564,48 @@ const triggerAssignCategories = async (req, res) => {
   }
 };
 
+/**
+ * Trigger popular culture seeding
+ * POST /api/admin/seed-popular-culture
+ * Body: { count?: number }
+ */
+const triggerSeedPopularCulture = async (req, res) => {
+  try {
+    const { count } = req.body;
+    const targetCount = count ? parseInt(count) : 500;
+    
+    if (targetCount <= 0 || targetCount > 5000) {
+      return res.status(400).json({
+        error: 'Invalid count',
+        message: 'Count must be between 1 and 5,000'
+      });
+    }
+    
+    // Run seeding in background (don't block the response)
+    res.json({ 
+      message: `Popular culture seeding started for ${targetCount} items. This will focus on familiar, recognizable items from TV shows, movies, celebrities, sports, brands, etc.`,
+      note: `This will take approximately ${Math.round(targetCount / 80)}-${Math.round(targetCount / 60)} minutes. Check logs to monitor progress.`
+    });
+    
+    // Override the TARGET_COUNT by passing it directly
+    // We'll modify the seed function to accept a parameter
+    seedPopularCulture(targetCount).catch(err => {
+      console.error('Error during popular culture seeding:', err);
+    });
+    
+  } catch (error) {
+    console.error('Error in triggerSeedPopularCulture:', error);
+    res.status(500).json({ 
+      error: 'Failed to trigger popular culture seeding',
+      message: error.message 
+    });
+  }
+};
+
 module.exports = {
   triggerSeedCategories,
   triggerSeedTop2000,
+  triggerSeedPopularCulture,
   triggerUpdateImages,
   triggerAssignCategories,
   getAdminItems,

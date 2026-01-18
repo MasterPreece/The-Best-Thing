@@ -14,6 +14,7 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
   const [showUpdateImagesModal, setShowUpdateImagesModal] = useState(false);
   const [showSeedTop2000Modal, setShowSeedTop2000Modal] = useState(false);
+  const [showSeedPopularCultureModal, setShowSeedPopularCultureModal] = useState(false);
   const [showAssignCategoriesModal, setShowAssignCategoriesModal] = useState(false);
   const [showPhotoSubmissions, setShowPhotoSubmissions] = useState(false);
   const [showItemSubmissions, setShowItemSubmissions] = useState(false);
@@ -149,6 +150,9 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
           </button>
           <button className="seed-top2000-button" onClick={() => setShowSeedTop2000Modal(true)}>
             🌱 Seed Top 2000
+          </button>
+          <button className="seed-popular-culture-button" onClick={() => setShowSeedPopularCultureModal(true)}>
+            🎬 Seed Popular Culture
           </button>
           <button className="update-images-button" onClick={() => setShowUpdateImagesModal(true)}>
             🖼️ Update Images
@@ -314,6 +318,20 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
           onSuccess={() => {
             setShowSeedTop2000Modal(false);
             // Refresh stats after a longer delay (seeding takes 15-20 minutes)
+            setTimeout(() => {
+              fetchStats();
+            }, 60000); // Check after 1 minute
+          }}
+          api={api}
+        />
+      )}
+
+      {showSeedPopularCultureModal && (
+        <SeedPopularCultureModal
+          onClose={() => setShowSeedPopularCultureModal(false)}
+          onSuccess={() => {
+            setShowSeedPopularCultureModal(false);
+            // Refresh stats after a delay (seeding takes time)
             setTimeout(() => {
               fetchStats();
             }, 60000); // Check after 1 minute
