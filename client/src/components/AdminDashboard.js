@@ -1147,9 +1147,9 @@ const SeedTop2000Modal = ({ onClose, onSuccess, api }) => {
               </ul>
             </div>
             
-            <div className="info-box" style={{ background: '#e7f3ff', borderLeft: '4px solid #0066cc' }}>
+            <div className="info-box" style={{ background: 'rgba(79, 172, 254, 0.15)', borderLeft: '4px solid #4facfe' }}>
               <p><strong>💡 Continuous Growth:</strong></p>
-              <p style={{ margin: '8px 0', fontSize: '14px' }}>
+              <p style={{ margin: '8px 0', fontSize: '14px', color: 'rgba(255, 255, 255, 0.9)' }}>
                 Your database already grows automatically! The system adds ~5 new articles every 30 minutes when above the threshold (50 items). 
                 This seeding tool is for <strong>bulk initial seeding</strong> or when you want to add a large batch of popular articles quickly.
               </p>
