@@ -12,6 +12,7 @@ const bulkImportController = require('../controllers/bulk-import');
 const categoriesController = require('../controllers/categories');
 const photoSubmissionsController = require('../controllers/photo-submissions');
 const itemSubmissionsController = require('../controllers/item-submissions');
+const bulkLookupController = require('../controllers/bulk-lookup');
 const { adminAuth, adminLogin } = require('../utils/admin-auth');
 const { authenticate, optionalAuthenticate } = require('../utils/auth');
 const multer = require('multer');
@@ -97,6 +98,8 @@ router.post('/admin/items', adminAuth, adminController.createItem);
 router.put('/admin/items/:id', adminAuth, adminController.updateItem);
 router.delete('/admin/items/:id', adminAuth, adminController.deleteItem);
 router.get('/admin/stats', adminAuth, adminController.getAdminStats);
+router.post('/admin/bulk-lookup', adminAuth, upload.single('file'), bulkLookupController.bulkLookup);
+
 router.post('/admin/bulk-import', adminAuth, upload.single('file'), (err, req, res, next) => {
   if (err) {
     return res.status(400).json({ 
