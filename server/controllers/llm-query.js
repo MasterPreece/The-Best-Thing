@@ -1,9 +1,12 @@
 const { OpenAI } = require('openai');
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || null
-});
+// Get API key from environment
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || null;
+
+// Initialize OpenAI client (will fail gracefully if no key)
+const openai = OPENAI_API_KEY ? new OpenAI({
+  apiKey: OPENAI_API_KEY
+}) : null;
 
 /**
  * Generate a list of items from a natural language query using LLM
@@ -21,10 +24,11 @@ const generateItemList = async (req, res) => {
       });
     }
 
-    if (!openai.apiKey) {
+    if (!openai || !OPENAI_API_KEY) {
+      console.log('[LLM Query] API key check - OPENAI_API_KEY:', OPENAI_API_KEY ? 'SET (length: ' + OPENAI_API_KEY.length + ')' : 'NOT SET');
       return res.status(503).json({ 
         error: 'LLM service not available',
-        message: 'OPENAI_API_KEY environment variable is not set'
+        message: 'OPENAI_API_KEY environment variable is not set or invalid'
       });
     }
 
