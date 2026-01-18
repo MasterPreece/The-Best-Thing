@@ -217,34 +217,53 @@ async function gatherTopArticles(targetCount = TARGET_COUNT, category = null) {
   ];
   
   const gatherTarget = targetCount * 2; // Gather 2x to ensure we have enough for sorting
+  // For large targetCounts, get more per category (up to 1000 per category)
+  const perCategoryLimit = Math.min(1000, Math.max(200, Math.ceil(targetCount / 10)));
+  
   for (const category of popularCategories) {
     if (allArticles.size >= gatherTarget) break;
     
     try {
-      const params = {
-        action: 'query',
-        format: 'json',
-        list: 'categorymembers',
-        cmtitle: category,
-        cmnamespace: 0,
-        cmlimit: 200, // Get top 200 from each category
-        cmtype: 'page',
-        redirects: 1
-      };
+      let continueToken = null;
+      let fetchedFromCategory = 0;
+      const categoryTarget = Math.min(perCategoryLimit, gatherTarget - allArticles.size);
       
-      const response = await axios.get(WIKIPEDIA_API, {
-        params,
-        headers: {
-          'User-Agent': 'TheBestThing/1.0 (https://github.com/MasterPreece/The-Best-Thing; contact@example.com)'
+      while (fetchedFromCategory < categoryTarget && allArticles.size < gatherTarget) {
+        const params = {
+          action: 'query',
+          format: 'json',
+          list: 'categorymembers',
+          cmtitle: category,
+          cmnamespace: 0,
+          cmlimit: Math.min(500, categoryTarget - fetchedFromCategory), // Get up to 500 per request
+          cmtype: 'page',
+          redirects: 1
+        };
+        
+        if (continueToken) {
+          params.cmcontinue = continueToken;
         }
-      });
-      
-      const members = response.data.query?.categorymembers || [];
-      members.forEach(m => allArticles.add(m.title));
-      
-      console.log(`   ✓ Added ${members.length} from ${category} (${allArticles.size} total)`);
-      
-      await new Promise(resolve => setTimeout(resolve, API_DELAY));
+        
+        const response = await axios.get(WIKIPEDIA_API, {
+          params,
+          headers: {
+            'User-Agent': 'TheBestThing/1.0 (https://github.com/MasterPreece/The-Best-Thing; contact@example.com)'
+          }
+        });
+        
+        const members = response.data.query?.categorymembers || [];
+        members.forEach(m => allArticles.add(m.title));
+        fetchedFromCategory += members.length;
+        
+        if (members.length > 0) {
+          console.log(`   ✓ Added ${members.length} from ${category} (${allArticles.size} total)`);
+        }
+        
+        continueToken = response.data.continue?.cmcontinue;
+        if (!continueToken || members.length === 0) break;
+        
+        await new Promise(resolve => setTimeout(resolve, API_DELAY));
+      }
     } catch (err) {
       console.error(`   ✗ Error fetching ${category}:`, err.message);
     }
@@ -411,7 +430,10 @@ async function seedTopArticles(targetCount = TARGET_COUNT, category = null, star
   console.log(`📊 Current database has ${currentCount} items\n`);
   
   // Step 1: Gather articles from multiple sources (or specific category)
-  const allArticleTitles = await gatherTopArticles(targetCount, category);
+  // If a range is specified, gather at least endRank articles (with buffer for duplicates)
+  // Otherwise, use targetCount * 2 to ensure enough articles for sorting
+  const gatherCount = (startRank && endRank) ? Math.max(endRank * 1.5, targetCount * 2) : targetCount * 2;
+  const allArticleTitles = await gatherTopArticles(gatherCount, category);
   
   if (allArticleTitles.length === 0) {
     console.error('❌ No articles gathered.');
