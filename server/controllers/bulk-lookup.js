@@ -229,27 +229,61 @@ async function processBulkLookup(data) {
           skipped++;
         }
       } else {
+        // SQLite: Try with category_id first, fall back to without it if column doesn't exist
         await new Promise((resolve) => {
+          // Try with category_id first
           dbInstance.run(
             'INSERT OR IGNORE INTO items (wikipedia_id, title, image_url, description, category_id) VALUES (?, ?, ?, ?, ?)',
             [pageInfo.wikipediaId, pageInfo.title, pageInfo.imageUrl, pageInfo.description, categoryId],
             function(err) {
               if (err) {
-                console.error(`[Bulk Lookup] Error inserting ${pageInfo.title}:`, err);
-                failed++;
-                errors.push({
-                  row: rowNum,
-                  error: `Database error: ${err.message}`,
-                  data: row
-                });
+                const errorStr = err.message || err.toString() || '';
+                // If category_id column doesn't exist, try without it
+                if (errorStr.includes('no such column') && errorStr.includes('category_id')) {
+                  console.log(`[Bulk Lookup] Category column not available, inserting without category`);
+                  // Retry without category_id
+                  dbInstance.run(
+                    'INSERT OR IGNORE INTO items (wikipedia_id, title, image_url, description) VALUES (?, ?, ?, ?)',
+                    [pageInfo.wikipediaId, pageInfo.title, pageInfo.imageUrl, pageInfo.description],
+                    function(retryErr) {
+                      if (retryErr) {
+                        console.error(`[Bulk Lookup] Error inserting ${pageInfo.title}:`, retryErr);
+                        failed++;
+                        errors.push({
+                          row: rowNum,
+                          error: `Database error: ${retryErr.message}`,
+                          data: row
+                        });
+                      } else if (this.changes > 0) {
+                        inserted++;
+                        const imageStatus = pageInfo.hasImage ? '📷' : '❌';
+                        console.log(`[Bulk Lookup] ${imageStatus} [${i + 1}/${data.length}] Added: ${pageInfo.title}`);
+                      } else {
+                        skipped++;
+                      }
+                      resolve();
+                    }
+                  );
+                } else {
+                  // Other error
+                  console.error(`[Bulk Lookup] Error inserting ${pageInfo.title}:`, err);
+                  failed++;
+                  errors.push({
+                    row: rowNum,
+                    error: `Database error: ${err.message}`,
+                    data: row
+                  });
+                  resolve();
+                }
               } else if (this.changes > 0) {
                 inserted++;
                 const imageStatus = pageInfo.hasImage ? '📷' : '❌';
                 console.log(`[Bulk Lookup] ${imageStatus} [${i + 1}/${data.length}] Added: ${pageInfo.title}`);
+                resolve();
               } else {
                 skipped++;
+                resolve();
               }
-              resolve();
             }
           );
         });

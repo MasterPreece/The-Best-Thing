@@ -4,6 +4,7 @@ import './AdminDashboard.css';
 import ItemModal from './modals/ItemModal';
 import BulkImportModal from './modals/BulkImportModal';
 import BulkLookupModal from './modals/BulkLookupModal';
+import LLMQueryModal from './modals/LLMQueryModal';
 import SeedTop2000Modal from './modals/SeedTop2000Modal';
 import SeedPopularCultureModal from './modals/SeedPopularCultureModal';
 
@@ -18,6 +19,8 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
   const [showBulkLookupModal, setShowBulkLookupModal] = useState(false);
+  const [showLLMQueryModal, setShowLLMQueryModal] = useState(false);
+  const [pendingCsvData, setPendingCsvData] = useState(null);
   const [showUpdateImagesModal, setShowUpdateImagesModal] = useState(false);
   const [showSeedTop2000Modal, setShowSeedTop2000Modal] = useState(false);
   const [showSeedPopularCultureModal, setShowSeedPopularCultureModal] = useState(false);
@@ -164,6 +167,14 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
             <div className="tool-content">
               <h4 className="tool-title">Bulk Lookup</h4>
               <p className="tool-description">Upload a list of titles - automatically searches Wikipedia and adds items.</p>
+            </div>
+          </div>
+
+          <div className="admin-tool-card" onClick={() => setShowLLMQueryModal(true)} style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+            <div className="tool-icon">🤖</div>
+            <div className="tool-content">
+              <h4 className="tool-title">LLM Query</h4>
+              <p className="tool-description">Use AI to generate item lists from natural language queries (e.g., "top 100 NBA players").</p>
             </div>
           </div>
 
@@ -363,13 +374,36 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
 
       {showBulkLookupModal && (
         <BulkLookupModal
-          onClose={() => setShowBulkLookupModal(false)}
+          onClose={() => {
+            setShowBulkLookupModal(false);
+            setPendingCsvData(null); // Clear pending CSV data when closing
+          }}
           onSuccess={() => {
             setShowBulkLookupModal(false);
+            setPendingCsvData(null); // Clear pending CSV data after success
             setTimeout(() => {
               fetchItems();
               fetchStats();
             }, 30000); // Refresh after 30 seconds (lookup takes time)
+          }}
+          api={api}
+          initialCsvData={pendingCsvData}
+        />
+      )}
+
+      {showLLMQueryModal && (
+        <LLMQueryModal
+          onClose={() => setShowLLMQueryModal(false)}
+          onSuccess={(file, csvData) => {
+            // If user clicked "Use in Bulk Lookup", store CSV data and open Bulk Lookup modal
+            if (csvData) {
+              setPendingCsvData(csvData);
+              setShowLLMQueryModal(false);
+              setShowBulkLookupModal(true);
+            } else {
+              // Fallback: just show alert if no CSV data
+              alert('CSV generated! You can copy it or download it, then use it with the Bulk Lookup tool.');
+            }
           }}
           api={api}
         />

@@ -1,10 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
-const BulkLookupModal = ({ onClose, onSuccess, api }) => {
+const BulkLookupModal = ({ onClose, onSuccess, api, initialCsvData }) => {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
+
+  // If initial CSV data is provided, convert it to a File
+  useEffect(() => {
+    if (initialCsvData && !file) {
+      const blob = new Blob([initialCsvData], { type: 'text/csv' });
+      const csvFile = new File([blob], `llm-query-${Date.now()}.csv`, { type: 'text/csv' });
+      setFile(csvFile);
+    }
+  }, [initialCsvData]);
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
@@ -190,6 +199,18 @@ Inception,Movies & TV`}
 
           <div className="form-group">
             <label>Select File</label>
+            {initialCsvData && (
+              <div style={{ 
+                background: 'rgba(102, 126, 234, 0.2)', 
+                border: '1px solid rgba(102, 126, 234, 0.5)', 
+                borderRadius: '6px', 
+                padding: '10px', 
+                marginBottom: '10px',
+                color: 'rgba(255, 255, 255, 0.9)'
+              }}>
+                ✅ File pre-filled from LLM Query tool
+              </div>
+            )}
             <input
               type="file"
               accept=".xlsx,.xls,.csv"
