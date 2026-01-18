@@ -838,7 +838,17 @@ const BulkLookupModal = ({ onClose, onSuccess, api }) => {
                 </p>
                 <p className="format-tip">
                   ⚡ <strong>Example:</strong> Create a CSV like this:
-                  <pre style={{ background: '#2d2d2d', padding: '10px', borderRadius: '4px', marginTop: '10px', fontSize: '12px' }}>
+                  <pre style={{ 
+                    background: 'rgba(0, 0, 0, 0.3)', 
+                    padding: '12px', 
+                    borderRadius: '6px', 
+                    marginTop: '10px', 
+                    fontSize: '12px',
+                    color: 'rgba(255, 255, 255, 0.9)',
+                    fontFamily: 'monospace',
+                    overflow: 'auto',
+                    border: '1px solid rgba(255, 255, 255, 0.1)'
+                  }}>
 {`Title,Category
 LeBron James,Sports
 Michael Jordan,Sports

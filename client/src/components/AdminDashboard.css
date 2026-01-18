@@ -620,19 +620,21 @@
 
 /* Bulk Import Modal Styles */
 .bulk-import-modal {
-  max-width: 700px;
+  max-width: 800px;
 }
 
 .bulk-import-info {
-  background: #f8f9fa;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   padding: 20px;
-  border-radius: 8px;
+  border-radius: 12px;
   margin-bottom: 20px;
 }
 
 .bulk-import-info > p:first-child {
   margin: 0 0 20px 0;
-  color: #333;
+  color: rgba(255, 255, 255, 0.9);
   font-size: 15px;
   font-weight: 500;
 }
@@ -643,16 +645,18 @@
 
 .format-guide h4 {
   margin: 0 0 15px 0;
-  color: #333;
+  color: #ffffff;
   font-size: 16px;
+  font-weight: 600;
 }
 
 .format-table-wrapper {
   overflow-x: auto;
   margin: 15px 0;
-  border: 2px solid #dee2e6;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
-  background: white;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
 }
 
 .format-example {
@@ -670,9 +674,10 @@
   padding: 12px 10px;
   text-align: left;
   font-weight: 600;
-  color: #ffffff;
+  color: rgba(255, 255, 255, 0.9);
   border-bottom: 2px solid rgba(255, 255, 255, 0.1);
   position: relative;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .format-example th.required {
@@ -716,8 +721,12 @@
 
 .format-notes p {
   margin: 8px 0;
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(255, 255, 255, 0.9);
   font-size: 14px;
+}
+
+.format-notes p strong {
+  color: #ffffff;
 }
 
 .format-notes ul {
