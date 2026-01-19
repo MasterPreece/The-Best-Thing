@@ -935,7 +935,6 @@ const runMigrations = async () => {
       });
     });
   }
-};
 
   // Migration: Create settings table if it doesn't exist
   try {
@@ -1004,6 +1003,7 @@ const runMigrations = async () => {
       console.error('Error in settings table migration:', err);
     }
   }
+};
 
 module.exports = {
   runMigrations
