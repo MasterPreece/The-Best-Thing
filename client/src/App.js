@@ -5,6 +5,7 @@ import Comparison from './components/Comparison';
 import Rankings from './components/Rankings';
 import Leaderboard from './components/Leaderboard';
 import ItemDetail from './components/ItemDetail';
+import UserStats from './components/UserStats';
 import AuthModal from './components/AuthModal';
 import DonateModal from './components/DonateModal';
 import AdminLogin from './components/AdminLogin';
@@ -49,6 +50,13 @@ function NavLinks({ showAuthModal, setShowAuthModal, setShowDonateModal, user, l
       </button>
       {isAuthenticated ? (
         <>
+          <Link 
+            to="/stats" 
+            className={`nav-link nav-link-primary ${isActive('/stats') ? 'active' : ''}`}
+          >
+            <span className="nav-link-icon">📊</span>
+            <span className="nav-link-text">My Stats</span>
+          </Link>
           <span className="nav-user">👤 {user?.username}</span>
           <button className="nav-logout" onClick={logout}>Logout</button>
         </>
@@ -68,6 +76,7 @@ function AppRoutes({ userSessionId, adminToken, setAdminToken }) {
         <Route path="/" element={<Comparison userSessionId={userSessionId} />} />
         <Route path="/rankings" element={<Rankings />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
+        <Route path="/stats" element={<UserStats />} />
         <Route path="/items/:id" element={<ItemDetail />} />
         <Route 
           path="/admin" 

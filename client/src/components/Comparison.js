@@ -164,6 +164,11 @@ const Comparison = ({ userSessionId }) => {
         }
       }
 
+      // Show upset pick feedback if user picked an underdog
+      if (response.data.wasUpset) {
+        showToast('🎯 Upset pick! You chose the underdog!', 'success');
+      }
+
       // Wait a moment to show the selection with animation, then fetch new comparison
       setTimeout(() => {
         // Add a brief fade-out effect before loading next

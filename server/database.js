@@ -110,6 +110,11 @@ const createTables = async () => {
           comparison_count INTEGER DEFAULT 0,
           wins INTEGER DEFAULT 0,
           losses INTEGER DEFAULT 0,
+          familiarity_score DOUBLE PRECISION DEFAULT 0.0,
+          rating_confidence DOUBLE PRECISION DEFAULT 0.0,
+          last_compared_at TIMESTAMP,
+          first_seen_at TIMESTAMP,
+          skip_count INTEGER DEFAULT 0,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `);
@@ -157,6 +162,12 @@ const createTables = async () => {
       // Indexes
       await client.query(`
         CREATE INDEX IF NOT EXISTS idx_items_elo ON items(elo_rating DESC)
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_items_familiarity ON items(familiarity_score DESC)
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_items_confidence ON items(rating_confidence ASC)
       `);
       await client.query(`
         CREATE INDEX IF NOT EXISTS idx_comparisons_winner ON comparisons(winner_id)
@@ -255,6 +266,11 @@ const createTables = async () => {
             comparison_count INTEGER DEFAULT 0,
             wins INTEGER DEFAULT 0,
             losses INTEGER DEFAULT 0,
+            familiarity_score REAL DEFAULT 0.0,
+            rating_confidence REAL DEFAULT 0.0,
+            last_compared_at DATETIME,
+            first_seen_at DATETIME,
+            skip_count INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
           )`, (err) => {
             if (err) {
@@ -267,11 +283,20 @@ const createTables = async () => {
             db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_items_title ON items(title)`, (err) => {
               if (err) console.error('Error creating idx_items_title:', err);
               
+              // Try to create category_id index, but don't error if column doesn't exist yet
               db.run(`CREATE INDEX IF NOT EXISTS idx_items_category_id ON items(category_id)`, (err) => {
-                if (err) console.error('Error creating idx_items_category_id:', err);
-                
-                // Comparisons table - depends on items
-                db.run(`CREATE TABLE IF NOT EXISTS comparisons (
+                if (err) {
+                  // Silently ignore if category_id column doesn't exist yet
+                  const errMsg = err.message || err.toString() || '';
+                  if (!errMsg.toLowerCase().includes('no such column')) {
+                    console.error('Error creating idx_items_category_id:', err);
+                  }
+                }
+              });
+            });
+            
+            // Comparisons table - depends on items
+            db.run(`CREATE TABLE IF NOT EXISTS comparisons (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               item1_id INTEGER NOT NULL,
               item2_id INTEGER NOT NULL,
@@ -320,44 +345,48 @@ const createTables = async () => {
                   
                   // Create indexes sequentially
                   db.run(`CREATE INDEX IF NOT EXISTS idx_items_elo ON items(elo_rating DESC)`, () => {
-                    db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_winner ON comparisons(winner_id)`, () => {
-                      db.run(`CREATE INDEX IF NOT EXISTS idx_user_sessions_comparisons ON user_sessions(comparisons_count DESC)`, () => {
-                        db.run(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`, () => {
-                          db.run(`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`, () => {
-                            db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_user_session_id ON comparisons(user_session_id)`, () => {
-                              db.run(`CREATE INDEX IF NOT EXISTS idx_users_comparisons ON users(comparisons_count DESC)`, () => {
-                                db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_user_id ON comparisons(user_id)`, () => {
-                                  // Comments table
-                                  db.run(`CREATE TABLE IF NOT EXISTS comments (
-                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                    item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-                                    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-                                    user_session_id TEXT,
-                                    content TEXT NOT NULL,
-                                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                                  )`, () => {
-                                    db.run(`CREATE INDEX IF NOT EXISTS idx_comments_item_id ON comments(item_id)`, () => {
-                                      db.run(`CREATE INDEX IF NOT EXISTS idx_comments_user_id ON comments(user_id)`, () => {
-                                        db.run(`CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at DESC)`, () => {
-                                          // Collections table
-                                          db.run(`CREATE TABLE IF NOT EXISTS collections (
-                                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                                            comparison_id INTEGER NOT NULL REFERENCES comparisons(id) ON DELETE CASCADE,
-                                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                                            UNIQUE(user_id, comparison_id)
-                                          )`, () => {
-                                            db.run(`CREATE INDEX IF NOT EXISTS idx_collections_user_id ON collections(user_id)`, () => {
-                                              db.run(`CREATE INDEX IF NOT EXISTS idx_collections_comparison_id ON collections(comparison_id)`, () => {
-                                                // Enable foreign keys for SQLite
-                                                db.run(`PRAGMA foreign_keys = ON`, (err) => {
-                                                  if (err) {
-                                                    console.error('Error enabling foreign keys:', err);
-                                                    return reject(err);
-                                                  }
-                                                  console.log('SQLite tables created successfully');
-                                                  resolve();
+                    db.run(`CREATE INDEX IF NOT EXISTS idx_items_familiarity ON items(familiarity_score DESC)`, () => {
+                      db.run(`CREATE INDEX IF NOT EXISTS idx_items_confidence ON items(rating_confidence ASC)`, () => {
+                        db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_winner ON comparisons(winner_id)`, () => {
+                          db.run(`CREATE INDEX IF NOT EXISTS idx_user_sessions_comparisons ON user_sessions(comparisons_count DESC)`, () => {
+                            db.run(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`, () => {
+                              db.run(`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`, () => {
+                                db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_user_session_id ON comparisons(user_session_id)`, () => {
+                                  db.run(`CREATE INDEX IF NOT EXISTS idx_users_comparisons ON users(comparisons_count DESC)`, () => {
+                                    db.run(`CREATE INDEX IF NOT EXISTS idx_comparisons_user_id ON comparisons(user_id)`, () => {
+                                      // Comments table
+                                      db.run(`CREATE TABLE IF NOT EXISTS comments (
+                                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+                                        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                                        user_session_id TEXT,
+                                        content TEXT NOT NULL,
+                                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                                      )`, () => {
+                                        db.run(`CREATE INDEX IF NOT EXISTS idx_comments_item_id ON comments(item_id)`, () => {
+                                          db.run(`CREATE INDEX IF NOT EXISTS idx_comments_user_id ON comments(user_id)`, () => {
+                                            db.run(`CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at DESC)`, () => {
+                                              // Collections table
+                                              db.run(`CREATE TABLE IF NOT EXISTS collections (
+                                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                                                comparison_id INTEGER NOT NULL REFERENCES comparisons(id) ON DELETE CASCADE,
+                                                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                                UNIQUE(user_id, comparison_id)
+                                              )`, () => {
+                                                db.run(`CREATE INDEX IF NOT EXISTS idx_collections_user_id ON collections(user_id)`, () => {
+                                                  db.run(`CREATE INDEX IF NOT EXISTS idx_collections_comparison_id ON collections(comparison_id)`, () => {
+                                                    // Enable foreign keys for SQLite
+                                                    db.run(`PRAGMA foreign_keys = ON`, (err) => {
+                                                      if (err) {
+                                                        console.error('Error enabling foreign keys:', err);
+                                                        return reject(err);
+                                                      }
+                                                      console.log('SQLite tables created successfully');
+                                                      resolve();
+                                                    });
+                                                  });
                                                 });
                                               });
                                             });
@@ -376,8 +405,6 @@ const createTables = async () => {
                   });
                 });
               });
-            });
-          });
             });
           });
         });

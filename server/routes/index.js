@@ -44,6 +44,7 @@ const upload = multer({
 router.get('/comparison', optionalAuthenticate, comparisonsController.getRandomComparison);
 router.get('/comparison/count', comparisonsController.getSessionComparisonCount);
 router.post('/comparison/vote', optionalAuthenticate, comparisonsController.submitVote);
+router.post('/comparison/skip', optionalAuthenticate, comparisonsController.submitSkip);
 
 // Categories
 router.get('/categories', categoriesController.getCategories);
@@ -54,6 +55,7 @@ router.get('/items/ranking', itemsController.getRankings);
 router.get('/items/trending', itemsController.getTrendingItems);
 router.get('/items/rising-falling', itemsController.getRisingFalling);
 router.get('/items/search', itemsController.searchItem);
+router.get('/items/:id/stats', itemsController.getItemStats);
 router.get('/items/:id', itemsController.getItemById);
 
 // Leaderboard

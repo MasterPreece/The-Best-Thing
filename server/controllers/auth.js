@@ -1,5 +1,6 @@
 const db = require('../database');
 const { hashPassword, comparePassword, generateToken } = require('../utils/auth');
+const { calculateUserStats } = require('../utils/user-stats-calculator');
 
 /**
  * Register a new user
@@ -305,39 +306,110 @@ const getCurrentUser = (req, res) => {
 };
 
 /**
- * Get user stats
+ * Get user stats (enhanced with upset statistics and patterns)
  */
-const getUserStats = (req, res) => {
+const getUserStats = async (req, res) => {
   const dbInstance = db.getDb();
 
-  dbInstance.get(`
-    SELECT 
-      u.id,
-      u.username,
-      u.comparisons_count,
-      u.created_at,
-      COUNT(DISTINCT c.id) as total_votes,
-      COUNT(DISTINCT CASE WHEN c.winner_id = c.item1_id AND i1.id = c.winner_id THEN c.id END) +
-      COUNT(DISTINCT CASE WHEN c.winner_id = c.item2_id AND i2.id = c.winner_id THEN c.id END) as wins
-    FROM users u
-    LEFT JOIN comparisons c ON c.user_id = u.id
-    LEFT JOIN items i1 ON c.item1_id = i1.id
-    LEFT JOIN items i2 ON c.item2_id = i2.id
-    WHERE u.id = ?
-    GROUP BY u.id
-  `, [req.userId], (err, stats) => {
-    if (err) {
-      console.error('Error fetching user stats:', err);
-      return res.status(500).json({ error: 'Database error' });
-    }
+  try {
+    // Get basic stats - handle missing columns gracefully
+    const statsResult = await new Promise((resolve, reject) => {
+      // Try to get all columns, but if they don't exist, just get basic ones
+      dbInstance.get(`
+        SELECT 
+          id,
+          username,
+          comparisons_count,
+          created_at
+        FROM users
+        WHERE id = ?
+      `, [req.userId], (err, stats) => {
+        if (err) return reject(err);
+        
+        // Try to get new columns if they exist (won't fail if they don't)
+        dbInstance.get(`
+          SELECT 
+            upset_picks_count,
+            total_upsets_available,
+            average_rating_difference,
+            favorite_category_id,
+            consistency_score,
+            longest_correct_streak
+          FROM users
+          WHERE id = ?
+        `, [req.userId], (err2, extraStats) => {
+          if (!err2 && extraStats) {
+            resolve({ ...stats, ...extraStats });
+          } else {
+            // Columns don't exist yet, return with defaults
+            resolve({
+              ...stats,
+              upset_picks_count: 0,
+              total_upsets_available: 0,
+              average_rating_difference: null,
+              favorite_category_id: null,
+              consistency_score: null,
+              longest_correct_streak: 0
+            });
+          }
+        });
+      });
+    });
+    
+    // Calculate detailed stats from comparisons table (this works even if user columns don't exist)
+    const detailedStats = await calculateUserStats(req.userId).catch(err => {
+      console.error('Error calculating user stats from comparisons:', err);
+      return {
+        upsetPicks: 0,
+        totalUpsetsAvailable: 0,
+        upsetPickRate: 0,
+        averageRatingDifference: 0,
+        favoriteCategoryId: null,
+        longestCorrectStreak: 0
+      };
+    });
 
+    const stats = statsResult || {};
+    
+    // Get category name if favorite_category_id exists
+    let favoriteCategoryName = null;
+    if (stats.favorite_category_id) {
+      try {
+        favoriteCategoryName = await new Promise((resolve) => {
+          dbInstance.get(`
+            SELECT name FROM categories WHERE id = ?
+          `, [stats.favorite_category_id], (err, category) => {
+            if (err || !category) {
+              resolve(null);
+            } else {
+              resolve(category.name);
+            }
+          });
+        });
+      } catch (catErr) {
+        // If category lookup fails, continue without it
+      }
+    }
+    
     res.json({
       comparisonsCount: stats.comparisons_count || 0,
-      totalVotes: stats.total_votes || 0,
-      wins: stats.wins || 0,
-      createdAt: stats.created_at
+      createdAt: stats.created_at,
+      // Upset statistics
+      upsetPicks: detailedStats.upsetPicks || stats.upset_picks_count || 0,
+      totalUpsetsAvailable: detailedStats.totalUpsetsAvailable || stats.total_upsets_available || 0,
+      upsetPickRate: detailedStats.upsetPickRate || 0,
+      // Voting patterns
+      averageRatingDifference: detailedStats.averageRatingDifference || stats.average_rating_difference || 0,
+      favoriteCategoryId: detailedStats.favoriteCategoryId || stats.favorite_category_id || null,
+      favoriteCategoryName: favoriteCategoryName,
+      // Achievements
+      longestCorrectStreak: detailedStats.longestCorrectStreak || stats.longest_correct_streak || 0,
+      consistencyScore: stats.consistency_score || null
     });
-  });
+  } catch (error) {
+    console.error('Error in getUserStats:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 };
 
 module.exports = {

@@ -1,6 +1,10 @@
 const db = require('../database');
 const { updateEloRatings } = require('../utils/elo');
 const wikipediaFetcher = require('../services/wikipedia-fetcher');
+const { getSelectionThresholds } = require('../utils/selection-config');
+const { updateFamiliarityMetrics } = require('../utils/familiarity-calculator');
+const { updateItemMetricsAfterVote } = require('../utils/item-metrics-updater');
+const { updateUserStatsInDatabase } = require('../utils/user-stats-calculator');
 
 const getRandomComparison = (req, res) => {
   const dbInstance = db.getDb();
@@ -10,8 +14,78 @@ const getRandomComparison = (req, res) => {
     console.error('Error checking/fetching Wikipedia items:', err);
   });
   
+  // Helper function to fetch items by familiarity (70% of selections)
+  // Uses familiarity_score for weighted selection
+  const fetchByFamiliarity = () => {
+    const dbType = db.getDbType();
+    if (dbType === 'postgres') {
+      return db.query(`
+        SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
+               i.familiarity_score, i.rating_confidence,
+               c.id as category_id, c.name as category_name, c.slug as category_slug
+        FROM items i
+        LEFT JOIN categories c ON i.category_id = c.id
+        WHERE i.comparison_count >= 0
+        ORDER BY (i.familiarity_score + 1) * RANDOM() DESC
+        LIMIT 20
+      `).then(result => {
+        if (result.rows.length < 2) {
+          return res.status(404).json({ error: 'Not enough items in database' });
+        }
+        const shuffled = result.rows.sort(() => Math.random() - 0.5);
+        let item1 = shuffled[0];
+        let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+        if (item1.id === item2.id && shuffled.length > 1) {
+          item2 = shuffled[1];
+        }
+        res.json({ item1, item2 });
+      }).catch(err => {
+        // Fallback if familiarity_score column doesn't exist yet
+        if (err.code === '42703' || err.message.includes('familiarity_score')) {
+          return fetchFromAllItems();
+        }
+        console.error('Error fetching by familiarity:', err);
+        return fetchFromAllItems();
+      });
+    }
+    
+    // SQLite version
+    dbInstance.all(`
+      SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
+             i.familiarity_score, i.rating_confidence,
+             c.id as category_id, c.name as category_name, c.slug as category_slug
+      FROM items i
+      LEFT JOIN categories c ON i.category_id = c.id
+      WHERE i.comparison_count >= 0
+      ORDER BY (COALESCE(i.familiarity_score, 0) + 1) * (ABS(RANDOM()) % 1000000) DESC
+      LIMIT 20
+    `, (err, rows) => {
+      if (err) {
+        const errorStr = err.message || err.toString() || '';
+        if (errorStr.includes('familiarity_score') || errorStr.includes('no such column')) {
+          return fetchFromAllItems();
+        }
+        console.error('Error fetching by familiarity:', err);
+        return fetchFromAllItems();
+      }
+      
+      if (rows.length < 2) {
+        return res.status(404).json({ error: 'Not enough items in database' });
+      }
+      
+      const shuffled = rows.sort(() => Math.random() - 0.5);
+      let item1 = shuffled[0];
+      let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+      if (item1.id === item2.id && shuffled.length > 1) {
+        item2 = shuffled[1];
+      }
+      res.json({ item1, item2 });
+    });
+  };
+  
   // Helper function to fetch from all items (weighted toward familiar items)
   // Ensures item1 != item2 and better variety
+  // Fallback function used when familiarity_score is not available
   const fetchFromAllItems = () => {
     const dbType = db.getDbType();
     if (dbType === 'postgres') {
@@ -145,26 +219,25 @@ const getRandomComparison = (req, res) => {
     });
   };
   
-  // Get two random items with smart prioritization
-  // 40% chance: items needing more comparisons (low comparison_count)
-  // 40% chance: items with recent activity (hot/trending)
-  // 20% chance: completely random (variety)
+  // Get two random items with smart prioritization based on familiarity
+  // 70% chance: familiarity-weighted selection (items with higher familiarity_score)
+  // 15% chance: items needing more votes (low confidence, low comparison_count)
+  // 15% chance: completely random (variety)
+  const thresholds = getSelectionThresholds();
   const selectionType = Math.random();
-  const usePrioritySelection = selectionType < 0.8;
   
-  // Helper to fetch items needing more comparisons
+  // Helper to fetch items needing more comparisons (low confidence)
   const fetchItemsNeedingVotes = () => {
     const dbType = db.getDbType();
     if (dbType === 'postgres') {
-      // Get items with fewer comparisons, weighted by their current rating
-      // This prioritizes promising items that need more data
+      // Get items with low rating confidence, weighted by needing more data
       return db.query(`
-        SELECT i.id, i.title, i.image_url, i.description, i.elo_rating,
+        SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.rating_confidence,
                c.id as category_id, c.name as category_name, c.slug as category_slug
         FROM items i
         LEFT JOIN categories c ON i.category_id = c.id
-        WHERE i.comparison_count < (SELECT AVG(comparison_count) * 1.5 FROM items)
-        ORDER BY (1.0 / (i.comparison_count + 1)) * LOG(i.elo_rating + 1) DESC, RANDOM()
+        WHERE COALESCE(i.rating_confidence, 0) < 0.8 OR i.comparison_count < 20
+        ORDER BY (1.0 - COALESCE(i.rating_confidence, 0)) * (1.0 / (i.comparison_count + 1)) DESC, RANDOM()
         LIMIT 20
       `).then(result => {
         if (result.rows.length >= 2) {
@@ -186,12 +259,12 @@ const getRandomComparison = (req, res) => {
     
     // SQLite version
     dbInstance.all(`
-      SELECT i.id, i.title, i.image_url, i.description, i.elo_rating,
+      SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.rating_confidence,
              c.id as category_id, c.name as category_name, c.slug as category_slug
       FROM items i
       LEFT JOIN categories c ON i.category_id = c.id
-      WHERE i.comparison_count < (SELECT AVG(comparison_count) * 1.5 FROM items)
-      ORDER BY (1.0 / (i.comparison_count + 1)) * LOG(i.elo_rating + 1) DESC, RANDOM()
+      WHERE COALESCE(i.rating_confidence, 0) < 0.8 OR i.comparison_count < 20
+      ORDER BY (1.0 - COALESCE(i.rating_confidence, 0)) * (1.0 / (i.comparison_count + 1)) DESC, RANDOM()
       LIMIT 20
     `, (err, rows) => {
       if (err || !rows || rows.length < 2) {
@@ -210,22 +283,16 @@ const getRandomComparison = (req, res) => {
     });
   };
   
-  // Helper to fetch hot/trending items (recently compared)
-  const fetchHotItems = () => {
+  // Helper to fetch truly random items (pure variety)
+  const fetchRandomItems = () => {
     const dbType = db.getDbType();
     if (dbType === 'postgres') {
-      // Get items that were compared recently (last 24 hours)
       return db.query(`
-        SELECT DISTINCT i.id, i.title, i.image_url, i.description, i.elo_rating,
-               c.id as category_id, c.name as category_name, c.slug as category_slug,
-               COUNT(cmp.id) as recent_comparisons
+        SELECT i.id, i.title, i.image_url, i.description, i.elo_rating,
+               c.id as category_id, c.name as category_name, c.slug as category_slug
         FROM items i
         LEFT JOIN categories c ON i.category_id = c.id
-        LEFT JOIN comparisons cmp ON (cmp.item1_id = i.id OR cmp.item2_id = i.id)
-          AND cmp.created_at >= NOW() - INTERVAL '24 hours'
-        GROUP BY i.id, c.id
-        HAVING COUNT(cmp.id) > 0
-        ORDER BY recent_comparisons DESC, RANDOM()
+        ORDER BY RANDOM()
         LIMIT 20
       `).then(result => {
         if (result.rows.length >= 2) {
@@ -235,32 +302,24 @@ const getRandomComparison = (req, res) => {
           if (item1.id === item2.id && shuffled.length > 1) {
             item2 = shuffled[1];
           }
-          return res.json({
-            item1,
-            item2
-          });
+          res.json({ item1, item2 });
+        } else {
+          return fetchFromAllItems();
         }
-        // Fallback to items needing votes if no recent activity
-        return fetchItemsNeedingVotes();
-      }).catch(() => fetchItemsNeedingVotes());
+      }).catch(() => fetchFromAllItems());
     }
     
     // SQLite version
     dbInstance.all(`
-      SELECT DISTINCT i.id, i.title, i.image_url, i.description, i.elo_rating,
-             c.id as category_id, c.name as category_name, c.slug as category_slug,
-             COUNT(cmp.id) as recent_comparisons
+      SELECT i.id, i.title, i.image_url, i.description, i.elo_rating,
+             c.id as category_id, c.name as category_name, c.slug as category_slug
       FROM items i
       LEFT JOIN categories c ON i.category_id = c.id
-      LEFT JOIN comparisons cmp ON (cmp.item1_id = i.id OR cmp.item2_id = i.id)
-        AND datetime(cmp.created_at) >= datetime('now', '-24 hours')
-      GROUP BY i.id, c.id
-      HAVING COUNT(cmp.id) > 0
-      ORDER BY recent_comparisons DESC, RANDOM()
+      ORDER BY RANDOM()
       LIMIT 20
     `, (err, rows) => {
       if (err || !rows || rows.length < 2) {
-        return fetchItemsNeedingVotes();
+        return fetchFromAllItems();
       }
       const shuffled = rows.sort(() => Math.random() - 0.5);
       let item1 = shuffled[0];
@@ -268,161 +327,20 @@ const getRandomComparison = (req, res) => {
       if (item1.id === item2.id && shuffled.length > 1) {
         item2 = shuffled[1];
       }
-      res.json({
-        item1,
-        item2
-      });
+      res.json({ item1, item2 });
     });
   };
   
-  // Priority selection logic (80% of the time)
-  if (usePrioritySelection) {
-    if (selectionType < 0.4) {
-      // 40% chance: items needing more votes
-      fetchItemsNeedingVotes();
-      return;
-    } else {
-      // 40% chance: hot/trending items
-      fetchHotItems();
-      return;
-    }
-  }
-  
-  // Fall back to existing weighted random logic (20% of the time, or if priority fails)
-  // Use a weighted random approach: 50% chance from items with descriptions, 50% from all items
-  // This ensures much better variety while still sometimes preferring items with descriptions
-  const useWeightedRandom = Math.random() < 0.5;
-  
-  if (useWeightedRandom) {
-    // Try to get items with descriptions first, but fall back to all items if needed
-    const dbType = db.getDbType();
-    if (dbType === 'postgres') {
-      db.query(`
-        SELECT i.id, i.title, i.image_url, i.description, i.elo_rating,
-               c.id as category_id, c.name as category_name, c.slug as category_slug
-        FROM items i
-        LEFT JOIN categories c ON i.category_id = c.id
-        WHERE i.description IS NOT NULL AND i.description != ''
-        ORDER BY RANDOM()
-        LIMIT 2
-      `).then(result => {
-        if (result.rows.length >= 2) {
-          // Ensure items are different
-          let item1 = result.rows[0];
-          let item2 = result.rows.find(item => item.id !== item1.id) || result.rows[1];
-          if (item1.id === item2.id && result.rows.length > 1) {
-            item2 = result.rows[1];
-          }
-          res.json({
-            item1,
-            item2
-          });
-        } else {
-          fetchFromAllItems();
-        }
-      }).catch(err => {
-        // If categories table doesn't exist, try simple query
-        if (err.code === '42P01' || err.message.includes('does not exist')) {
-          console.log('Categories table not found, using simple query');
-          return db.query(`
-            SELECT id, title, image_url, description, elo_rating
-            FROM items
-            WHERE description IS NOT NULL AND description != ''
-            ORDER BY RANDOM()
-            LIMIT 10
-          `).then(result => {
-            if (result.rows.length >= 2) {
-              const shuffled = result.rows.sort(() => Math.random() - 0.5);
-              let item1 = shuffled[0];
-              let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
-              if (item1.id === item2.id && shuffled.length > 1) {
-                item2 = shuffled[1];
-              }
-              res.json({
-                item1,
-                item2
-              });
-            } else {
-              fetchFromAllItems();
-            }
-          }).catch(fallbackErr => {
-            console.error('Error fetching comparison:', fallbackErr);
-            fetchFromAllItems();
-          });
-        }
-        console.error('Error fetching comparison:', err);
-        fetchFromAllItems();
-      });
-      return;
-    }
-    
-    dbInstance.all(`
-      SELECT i.id, i.title, i.image_url, i.description, i.elo_rating,
-             c.id as category_id, c.name as category_name, c.slug as category_slug
-      FROM items i
-      LEFT JOIN categories c ON i.category_id = c.id
-      WHERE i.description IS NOT NULL AND i.description != ''
-      ORDER BY RANDOM()
-      LIMIT 10
-    `, (err, rows) => {
-      if (err) {
-        // If categories table/column doesn't exist, fallback to simple query
-        const errorStr = err.message || err.toString() || '';
-        if (errorStr.includes('no such table: categories') || 
-            errorStr.includes('no such column') || 
-            errorStr.includes('category_id') ||
-            (err.code === 'SQLITE_ERROR' && errorStr.includes('category'))) {
-          console.log('Categories not available, using simple query');
-          return dbInstance.all(`
-            SELECT id, title, image_url, description, elo_rating
-            FROM items
-            WHERE description IS NOT NULL AND description != ''
-            ORDER BY RANDOM()
-            LIMIT 10
-          `, (fallbackErr, fallbackRows) => {
-            if (fallbackErr) {
-              console.error('Error fetching comparison:', fallbackErr);
-              return res.status(500).json({ error: 'Failed to fetch comparison' });
-            }
-            if (fallbackRows.length >= 2) {
-              const shuffled = fallbackRows.sort(() => Math.random() - 0.5);
-              let item1 = shuffled[0];
-              let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
-              if (item1.id === item2.id && shuffled.length > 1) {
-                item2 = shuffled[1];
-              }
-              return res.json({
-                item1,
-                item2
-              });
-            }
-            fetchFromAllItems();
-          });
-        }
-        console.error('Error fetching comparison:', err);
-        return res.status(500).json({ error: 'Failed to fetch comparison' });
-      }
-      
-      // If we got items with descriptions, shuffle and pick 2 different ones
-      if (rows.length >= 2) {
-        const shuffled = rows.sort(() => Math.random() - 0.5);
-        let item1 = shuffled[0];
-        let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
-        if (item1.id === item2.id && shuffled.length > 1) {
-          item2 = shuffled[1];
-        }
-        return res.json({
-          item1,
-          item2
-        });
-      }
-      
-      // Otherwise, fall back to all items
-      fetchFromAllItems();
-    });
+  // Main selection logic: 70% familiarity, 30% variety (15% items needing votes, 15% random)
+  if (selectionType < thresholds.familiarityThreshold) {
+    // 70%: Familiarity-weighted selection
+    fetchByFamiliarity();
+  } else if (selectionType < thresholds.itemsNeedingVotesThreshold) {
+    // 15%: Items needing more votes (low confidence)
+    fetchItemsNeedingVotes();
   } else {
-    // Get truly random items from all items (50% of the time)
-    fetchFromAllItems();
+    // 15%: True random variety
+    fetchRandomItems();
   }
 };
 
@@ -464,34 +382,92 @@ const submitVote = (req, res) => {
   const dbInstance = db.getDb();
   const userId = req.userId || null;
   
-  // Get current Elo ratings
+  // Get current Elo ratings and confidence (rating_confidence may not exist yet if migration hasn't run)
+  // Try to get both columns, but handle gracefully if rating_confidence doesn't exist
   dbInstance.get(`
-    SELECT elo_rating FROM items WHERE id = ?
+    SELECT elo_rating, rating_confidence FROM items WHERE id = ?
   `, [item1Id], (err, item1) => {
     if (err) {
+      // If rating_confidence column doesn't exist, try without it
+      if (err.message && err.message.includes('rating_confidence')) {
+        return dbInstance.get(`
+          SELECT elo_rating FROM items WHERE id = ?
+        `, [item1Id], (err, item1) => {
+          if (err) {
+            console.error('Error fetching item1:', err);
+            return res.status(500).json({ error: 'Database error' });
+          }
+          item1.rating_confidence = 0;
+          fetchItem2(item1);
+        });
+      }
+      console.error('Error fetching item1:', err);
       return res.status(500).json({ error: 'Database error' });
     }
     
+    if (!item1.rating_confidence) item1.rating_confidence = 0;
+    fetchItem2(item1);
+  });
+  
+  const fetchItem2 = (item1Data) => {
     dbInstance.get(`
-      SELECT elo_rating FROM items WHERE id = ?
+      SELECT elo_rating, rating_confidence FROM items WHERE id = ?
     `, [item2Id], (err, item2) => {
       if (err) {
+        // If rating_confidence column doesn't exist, try without it
+        if (err.message && err.message.includes('rating_confidence')) {
+          return dbInstance.get(`
+            SELECT elo_rating FROM items WHERE id = ?
+          `, [item2Id], (err, item2) => {
+            if (err) {
+              console.error('Error fetching item2:', err);
+              return res.status(500).json({ error: 'Database error' });
+            }
+            item2.rating_confidence = 0;
+            processVote(item1Data, item2);
+          });
+        }
+        console.error('Error fetching item2:', err);
         return res.status(500).json({ error: 'Database error' });
       }
       
-      // Calculate new Elo ratings
-      const item1Won = winnerId === item1Id;
-      const { newRating1, newRating2 } = updateEloRatings(
-        item1.elo_rating,
-        item2.elo_rating,
-        item1Won
-      );
-      
-      // Insert comparison record (include user_id if authenticated)
-      dbInstance.run(`
-        INSERT INTO comparisons (item1_id, item2_id, winner_id, user_id, user_session_id)
-        VALUES (?, ?, ?, ?, ?)
-      `, [item1Id, item2Id, winnerId, userId, userSessionId || null], function(err) {
+      if (!item2.rating_confidence) item2.rating_confidence = 0;
+      processVote(item1Data, item2);
+    });
+  };
+  
+  const processVote = (item1Data, item2Data) => {
+    // Calculate new Elo ratings with dynamic K-factor based on confidence
+    const item1Won = winnerId === item1Id;
+    const confidence1 = item1Data.rating_confidence || 0;
+    const confidence2 = item2Data.rating_confidence || 0;
+    const { newRating1, newRating2 } = updateEloRatings(
+      item1Data.elo_rating,
+      item2Data.elo_rating,
+      item1Won,
+      confidence1,
+      confidence2
+    );
+
+    // Calculate rating difference and detect upsets
+    const ratingDiff = Math.abs(item1Data.elo_rating - item2Data.elo_rating);
+    const winnerRating = item1Won ? item1Data.elo_rating : item2Data.elo_rating;
+    const loserRating = item1Won ? item2Data.elo_rating : item1Data.elo_rating;
+    const wasUpset = ratingDiff > 200 && winnerRating < loserRating;
+    
+    // Insert comparison record with rating_difference and was_upset (include user_id if authenticated)
+    const dbType = db.getDbType();
+    const insertSql = dbType === 'postgres'
+      ? `INSERT INTO comparisons (item1_id, item2_id, winner_id, user_id, user_session_id, rating_difference, was_upset)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`
+      : `INSERT INTO comparisons (item1_id, item2_id, winner_id, user_id, user_session_id, rating_difference, was_upset)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`;
+    
+    const insertParams = dbType === 'postgres'
+      ? [item1Id, item2Id, winnerId, userId, userSessionId || null, ratingDiff, wasUpset]
+      : [item1Id, item2Id, winnerId, userId, userSessionId || null, ratingDiff, wasUpset ? 1 : 0];
+
+    dbInstance.run(insertSql, insertParams, function(err) {
         if (err) {
           console.error('Error inserting comparison:', err);
           return res.status(500).json({ error: 'Failed to record comparison' });
@@ -514,20 +490,82 @@ const submitVote = (req, res) => {
         ];
         
         let completed = 0;
+        const now = new Date().toISOString();
+        
+        // Store wasUpset in response for frontend feedback
+        const responseData = {
+          success: true,
+          newRatings: {
+            item1: newRating1,
+            item2: newRating2
+          },
+          wasUpset: wasUpset
+        };
+        
+        // Update item metrics (peak rating, streaks, upsets) - async, non-blocking
+        const winnerIdFinal = item1Won ? item1Id : item2Id;
+        const loserIdFinal = item1Won ? item2Id : item1Id;
+        updateItemMetricsAfterVote(winnerIdFinal, loserIdFinal, 
+          item1Won ? newRating1 : newRating2, 
+          item1Won ? newRating2 : newRating1, 
+          wasUpset
+        ).catch(err => {
+          console.error('Error updating item metrics:', err);
+        });
+        
         updates.forEach(update => {
-          dbInstance.run(`
-            UPDATE items
-            SET elo_rating = ?,
-                comparison_count = comparison_count + 1,
-                wins = wins + ?,
-                losses = losses + ?
-            WHERE id = ?
-          `, [update.rating, update.wins, update.losses, update.id], (err) => {
+          // Update item with new rating, stats, and last_compared_at
+          // Build SQL without last_compared_at to avoid errors if column doesn't exist
+          // last_compared_at is handled separately by updateFamiliarityMetrics
+          const updateSql = dbType === 'postgres'
+            ? `UPDATE items
+               SET elo_rating = $1,
+                   comparison_count = comparison_count + 1,
+                   wins = wins + $2,
+                   losses = losses + $3
+               WHERE id = $4`
+            : `UPDATE items
+               SET elo_rating = ?,
+                   comparison_count = comparison_count + 1,
+                   wins = wins + ?,
+                   losses = losses + ?
+               WHERE id = ?`;
+          
+          const updateParams = dbType === 'postgres'
+            ? [update.rating, update.wins, update.losses, update.id]
+            : [update.rating, update.wins, update.losses, update.id];
+          
+          dbInstance.run(updateSql, updateParams, (err) => {
             if (err) {
-              console.error('Error updating item:', err);
+              // Silently ignore "column doesn't exist" errors - migrations haven't run yet
+              if (!err.message || !err.message.includes('no such column')) {
+                console.error('Error updating item:', err);
+              }
             }
             completed++;
             if (completed === 2) {
+              // Update familiarity and rating confidence for both items (async, non-blocking)
+              updateFamiliarityMetrics(db, item1Id, {
+                lastComparedAt: now,
+                familiarityScore: true,
+                ratingConfidence: true
+              }).catch(err => {
+                // Silently ignore "column doesn't exist" errors - migrations haven't run yet
+                if (!err.message || !err.message.includes('no such column')) {
+                  console.error('Error updating familiarity for item1:', err);
+                }
+              });
+              
+              updateFamiliarityMetrics(db, item2Id, {
+                lastComparedAt: now,
+                familiarityScore: true,
+                ratingConfidence: true
+              }).catch(err => {
+                // Silently ignore "column doesn't exist" errors - migrations haven't run yet
+                if (!err.message || !err.message.includes('no such column')) {
+                  console.error('Error updating familiarity for item2:', err);
+                }
+              });
               // Update user account if authenticated
               if (userId) {
                 dbInstance.run(`
@@ -536,6 +574,14 @@ const submitVote = (req, res) => {
                       last_active = CURRENT_TIMESTAMP
                   WHERE id = ?
                 `, [userId], () => {});
+                
+                // Update user statistics (upset picks, patterns) - async, non-blocking
+                updateUserStatsInDatabase(userId).catch(err => {
+                  // Silently ignore "column doesn't exist" errors - migrations haven't run yet
+                  if (!err.message || !err.message.includes('no such column')) {
+                    console.error('Error updating user stats:', err);
+                  }
+                });
               }
               
               // Update user session if provided (for anonymous users) and check if should prompt
@@ -569,11 +615,7 @@ const submitVote = (req, res) => {
                     const shouldPromptAccount = comparisonCount >= 10;
                     
                     res.json({
-                      success: true,
-                      newRatings: {
-                        item1: newRating1,
-                        item2: newRating2
-                      },
+                      ...responseData,
                       shouldPromptAccount,
                       comparisonCount
                     });
@@ -583,11 +625,7 @@ const submitVote = (req, res) => {
                     console.error('[PostgreSQL] Params:', upsertParams);
                     // Continue anyway - don't fail the vote if session update fails
                     res.json({
-                      success: true,
-                      newRatings: {
-                        item1: newRating1,
-                        item2: newRating2
-                      },
+                      ...responseData,
                       shouldPromptAccount: false
                     });
                   });
@@ -602,11 +640,7 @@ const submitVote = (req, res) => {
                       // Continue anyway - don't fail the vote if session update fails
                       // Still send response even if session update failed
                       return res.json({
-                        success: true,
-                        newRatings: {
-                          item1: newRating1,
-                          item2: newRating2
-                        },
+                        ...responseData,
                         shouldPromptAccount: false
                       });
                     }
@@ -622,11 +656,7 @@ const submitVote = (req, res) => {
                       const shouldPromptAccount = comparisonCount >= 10;
                       
                       res.json({
-                        success: true,
-                        newRatings: {
-                          item1: newRating1,
-                          item2: newRating2
-                        },
+                        ...responseData,
                         shouldPromptAccount,
                         comparisonCount
                       });
@@ -635,11 +665,7 @@ const submitVote = (req, res) => {
                 }
               } else {
                 res.json({
-                  success: true,
-                  newRatings: {
-                    item1: newRating1,
-                    item2: newRating2
-                  },
+                  ...responseData,
                   shouldPromptAccount: false
                 });
               }
@@ -647,6 +673,79 @@ const submitVote = (req, res) => {
           });
         });
       });
+    };
+  };
+
+/**
+ * Handle skip comparison - update skip_count and last_compared_at for both items
+ */
+const submitSkip = (req, res) => {
+  const { item1Id, item2Id, userSessionId } = req.body;
+  
+  if (!item1Id || !item2Id) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  
+  const dbInstance = db.getDb();
+  const dbType = db.getDbType();
+  const now = new Date().toISOString();
+  
+  // Update both items: increment skip_count and update last_compared_at
+  // This doesn't affect ELO ratings, but does track engagement
+  let completed = 0;
+  
+  [item1Id, item2Id].forEach(itemId => {
+    // Only update skip_count - last_compared_at is handled by updateFamiliarityMetrics
+    // This avoids errors if columns don't exist yet
+    const updateSql = dbType === 'postgres'
+      ? `UPDATE items
+         SET skip_count = COALESCE(skip_count, 0) + 1
+         WHERE id = $1`
+      : `UPDATE items
+         SET skip_count = COALESCE(skip_count, 0) + 1
+         WHERE id = ?`;
+    
+    const updateParams = dbType === 'postgres' ? [itemId] : [itemId];
+    
+    dbInstance.run(updateSql, updateParams, (err) => {
+      if (err) {
+        // Silently ignore "column doesn't exist" errors - migrations haven't run yet
+        if (!err.message || !err.message.includes('no such column')) {
+          console.error('Error updating skip count:', err);
+        }
+      }
+      completed++;
+      
+      if (completed === 2) {
+        // Update familiarity metrics for both items (async, non-blocking)
+        // Skip reduces engagement factor, so familiarity may decrease slightly
+        updateFamiliarityMetrics(db, item1Id, {
+          lastComparedAt: now,
+          skipCount: true,
+          familiarityScore: true
+        }).catch(err => {
+          // Silently ignore "column doesn't exist" errors - migrations haven't run yet
+          if (!err.message || !err.message.includes('no such column')) {
+            console.error('Error updating familiarity after skip for item1:', err);
+          }
+        });
+        
+        updateFamiliarityMetrics(db, item2Id, {
+          lastComparedAt: now,
+          skipCount: true,
+          familiarityScore: true
+        }).catch(err => {
+          // Silently ignore "column doesn't exist" errors - migrations haven't run yet
+          if (!err.message || !err.message.includes('no such column')) {
+            console.error('Error updating familiarity after skip for item2:', err);
+          }
+        });
+        
+        res.json({
+          success: true,
+          message: 'Comparison skipped'
+        });
+      }
     });
   });
 };
@@ -654,5 +753,6 @@ const submitVote = (req, res) => {
 module.exports = {
   getRandomComparison,
   getSessionComparisonCount,
-  submitVote
+  submitVote,
+  submitSkip
 };

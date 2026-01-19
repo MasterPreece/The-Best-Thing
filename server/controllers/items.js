@@ -562,10 +562,103 @@ const getRisingFalling = (req, res) => {
   });
 };
 
+/**
+ * Get detailed statistics for a specific item
+ */
+const getItemStats = async (req, res) => {
+  try {
+    const itemId = parseInt(req.params.id);
+    
+    if (!itemId) {
+      return res.status(400).json({ error: 'Invalid item ID' });
+    }
+
+    const dbInstance = db.getDb();
+    const dbType = db.getDbType();
+
+    // Get item details with all metrics
+    const sql = dbType === 'postgres'
+      ? `
+        SELECT 
+          id, title, elo_rating, comparison_count, wins, losses,
+          peak_rating, peak_rating_date, rating_7days_ago, rating_30days_ago,
+          first_vote_date, current_streak_wins, current_streak_losses,
+          longest_win_streak, upset_win_count, win_rate_last_100,
+          rating_change_last_7days, consistency_score
+        FROM items
+        WHERE id = $1
+      `
+      : `
+        SELECT 
+          id, title, elo_rating, comparison_count, wins, losses,
+          peak_rating, peak_rating_date, rating_7days_ago, rating_30days_ago,
+          first_vote_date, current_streak_wins, current_streak_losses,
+          longest_win_streak, upset_win_count, win_rate_last_100,
+          rating_change_last_7days, consistency_score
+        FROM items
+        WHERE id = ?
+      `;
+
+    const params = dbType === 'postgres' ? [itemId] : [itemId];
+
+    const item = await new Promise((resolve, reject) => {
+      dbInstance.get(sql, params, (err, row) => {
+        if (err) return reject(err);
+        resolve(row);
+      });
+    });
+
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+
+    // Calculate trend direction
+    let trend = 'stable';
+    if (item.rating_change_last_7days) {
+      if (item.rating_change_last_7days > 10) {
+        trend = 'rising';
+      } else if (item.rating_change_last_7days < -10) {
+        trend = 'falling';
+      }
+    }
+
+    res.json({
+      id: item.id,
+      title: item.title,
+      currentRating: item.elo_rating || 1500,
+      peakRating: item.peak_rating || item.elo_rating || 1500,
+      peakRatingDate: item.peak_rating_date,
+      comparisonCount: item.comparison_count || 0,
+      wins: item.wins || 0,
+      losses: item.losses || 0,
+      winRate: item.comparison_count > 0 ? ((item.wins || 0) / item.comparison_count * 100).toFixed(1) : 0,
+      // Streaks
+      currentStreakWins: item.current_streak_wins || 0,
+      currentStreakLosses: item.current_streak_losses || 0,
+      longestWinStreak: item.longest_win_streak || 0,
+      // Upsets
+      upsetWinCount: item.upset_win_count || 0,
+      // Trends
+      rating7DaysAgo: item.rating_7days_ago,
+      rating30DaysAgo: item.rating_30days_ago,
+      ratingChangeLast7Days: item.rating_change_last_7days || 0,
+      trend: trend,
+      // Performance
+      winRateLast100: item.win_rate_last_100,
+      consistencyScore: item.consistency_score,
+      firstVoteDate: item.first_vote_date
+    });
+  } catch (error) {
+    console.error('Error fetching item stats:', error);
+    res.status(500).json({ error: 'Failed to fetch item statistics' });
+  }
+};
+
 module.exports = {
   getRankings,
   searchItem,
   getItemById,
   getTrendingItems,
-  getRisingFalling
+  getRisingFalling,
+  getItemStats
 };
