@@ -1559,7 +1559,7 @@ const SettingsPanel = ({ onClose, settings, settingsLoading, onUpdate, api }) =>
                   <label className="setting-label">
                     <span className="setting-name">Low Confidence K-Factor</span>
                     <span className="setting-description">
-                      K-factor for items with low confidence (< {mediumConfidenceThreshold}) - higher = learns faster
+                      K-factor for items with low confidence ({'< '}{mediumConfidenceThreshold}) - higher = learns faster
                     </span>
                   </label>
                   <div className="setting-control">
