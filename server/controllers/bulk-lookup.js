@@ -47,10 +47,29 @@ const bulkLookup = async (req, res) => {
       });
     }
 
-    // Parse the file
+    // Parse the file with UTF-8 encoding support
     let workbook;
     try {
-      workbook = XLSX.read(file.buffer, { type: 'buffer' });
+      if (fileExtension === 'csv') {
+        // Handle CSV files specially to preserve UTF-8 encoding
+        // Parse CSV as UTF-8 string to preserve special characters
+        const csvText = file.buffer.toString('utf8');
+        
+        // Remove BOM if present
+        const csvWithoutBOM = csvText.length > 0 && csvText.charCodeAt(0) === 0xFEFF ? csvText.slice(1) : csvText;
+        
+        // Parse CSV with UTF-8 encoding
+        workbook = XLSX.read(csvWithoutBOM, { 
+          type: 'string',
+          codepage: 65001 // UTF-8
+        });
+      } else {
+        // Parse Excel files with UTF-8 encoding
+        workbook = XLSX.read(file.buffer, { 
+          type: 'buffer',
+          codepage: 65001 // UTF-8
+        });
+      }
     } catch (err) {
       return res.status(400).json({ 
         error: 'Failed to parse file',
@@ -62,7 +81,7 @@ const bulkLookup = async (req, res) => {
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     
-    // Convert to JSON
+    // Convert to JSON with UTF-8 handling
     const data = XLSX.utils.sheet_to_json(worksheet, { 
       defval: null, // Use null for empty cells
       raw: false // Convert numbers to strings for consistency

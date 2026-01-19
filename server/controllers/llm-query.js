@@ -112,11 +112,14 @@ Make sure each item is a real, notable person, place, thing, or concept that wou
 
     console.log(`[LLM Query] Generated ${lines.length - 1} items`);
 
+    // Ensure CSV is properly UTF-8 encoded (add BOM for Excel compatibility)
+    const csvWithBOM = '\uFEFF' + csvData;
+
     res.json({
       success: true,
       query: trimmedQuery,
       count: lines.length - 1, // Excluding header
-      csv: csvData,
+      csv: csvWithBOM, // Include UTF-8 BOM for proper encoding
       message: `Generated ${lines.length - 1} items for: "${trimmedQuery}"`
     });
 

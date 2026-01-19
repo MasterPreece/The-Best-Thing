@@ -9,8 +9,13 @@ const BulkLookupModal = ({ onClose, onSuccess, api, initialCsvData }) => {
   // If initial CSV data is provided, convert it to a File
   useEffect(() => {
     if (initialCsvData && !file) {
-      const blob = new Blob([initialCsvData], { type: 'text/csv' });
-      const csvFile = new File([blob], `llm-query-${Date.now()}.csv`, { type: 'text/csv' });
+      // Ensure UTF-8 BOM is preserved for proper encoding
+      const blob = new Blob(['\uFEFF' + initialCsvData.replace(/^\uFEFF/, '')], { 
+        type: 'text/csv;charset=utf-8' 
+      });
+      const csvFile = new File([blob], `llm-query-${Date.now()}.csv`, { 
+        type: 'text/csv;charset=utf-8' 
+      });
       setFile(csvFile);
     }
   }, [initialCsvData, file]);
