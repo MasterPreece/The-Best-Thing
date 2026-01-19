@@ -1,17 +1,25 @@
 // Familiarity score calculator
 // Calculates familiarity_score using multiple factors: comparison_count, win_rate, recency, engagement
 
-const MIN_COMPARISONS_FOR_CONFIDENCE = 30;
-const COMPARISON_SATURATION_POINT = 50; // Familiarity saturates at 50 comparisons
-const RECENCY_DECAY_DAYS = 30; // Recency factor decays over 30 days
+const settings = require('./settings');
+
+// Default values (used as fallback)
+const DEFAULT_MIN_COMPARISONS_FOR_CONFIDENCE = 30;
+const DEFAULT_COMPARISON_SATURATION_POINT = 50;
+const DEFAULT_RECENCY_DECAY_DAYS = 30;
+const DEFAULT_COMPARISON_FACTOR_WEIGHT = 0.40;
+const DEFAULT_WIN_RATE_FACTOR_WEIGHT = 0.25;
+const DEFAULT_RECENCY_FACTOR_WEIGHT = 0.20;
+const DEFAULT_ENGAGEMENT_FACTOR_WEIGHT = 0.15;
 
 /**
  * Calculate comparison factor (0-1)
  * Based on how many times the item has been compared
- * Saturates at COMPARISON_SATURATION_POINT comparisons
+ * Saturates at comparison_saturation_point comparisons
  */
-const calculateComparisonFactor = (comparisonCount) => {
-  return Math.min(1.0, comparisonCount / COMPARISON_SATURATION_POINT);
+const calculateComparisonFactor = async (comparisonCount) => {
+  const saturationPoint = await settings.getComparisonSaturationPoint();
+  return Math.min(1.0, comparisonCount / saturationPoint);
 };
 
 /**
@@ -26,17 +34,18 @@ const calculateWinRateFactor = (wins, comparisonCount) => {
 /**
  * Calculate recency factor (0-1)
  * Based on how recently the item was compared
- * Decays over RECENCY_DECAY_DAYS days
+ * Decays over recency_decay_days days
  */
-const calculateRecencyFactor = (lastComparedAt) => {
+const calculateRecencyFactor = async (lastComparedAt) => {
   if (!lastComparedAt) return 0.0;
   
   const now = new Date();
   const lastCompared = new Date(lastComparedAt);
   const daysSince = (now - lastCompared) / (1000 * 60 * 60 * 24);
   
-  // Decay over RECENCY_DECAY_DAYS days
-  const factor = Math.max(0.0, 1.0 - (daysSince / RECENCY_DECAY_DAYS));
+  // Decay over recency_decay_days days
+  const decayDays = await settings.getRecencyDecayDays();
+  const factor = Math.max(0.0, 1.0 - (daysSince / decayDays));
   return factor;
 };
 
@@ -53,13 +62,9 @@ const calculateEngagementFactor = (skipCount, comparisonCount) => {
 
 /**
  * Calculate familiarity score (0-100)
- * Combines multiple factors with weighted formula:
- * - 40% comparison_factor (exposure)
- * - 25% win_rate_factor (recognition)
- * - 20% recency_factor (hotness)
- * - 15% engagement_factor (user engagement)
+ * Combines multiple factors with weighted formula
  */
-const calculateFamiliarityScore = (item) => {
+const calculateFamiliarityScore = async (item) => {
   const {
     comparison_count = 0,
     wins = 0,
@@ -67,17 +72,32 @@ const calculateFamiliarityScore = (item) => {
     skip_count = 0
   } = item;
   
-  const comparisonFactor = calculateComparisonFactor(comparison_count);
-  const winRateFactor = calculateWinRateFactor(wins, comparison_count);
-  const recencyFactor = calculateRecencyFactor(last_compared_at);
-  const engagementFactor = calculateEngagementFactor(skip_count, comparison_count);
+  const [
+    comparisonFactor,
+    winRateFactor,
+    recencyFactor,
+    engagementFactor,
+    comparisonWeight,
+    winRateWeight,
+    recencyWeight,
+    engagementWeight
+  ] = await Promise.all([
+    calculateComparisonFactor(comparison_count),
+    Promise.resolve(calculateWinRateFactor(wins, comparison_count)),
+    calculateRecencyFactor(last_compared_at),
+    Promise.resolve(calculateEngagementFactor(skip_count, comparison_count)),
+    settings.getComparisonFactorWeight(),
+    settings.getWinRateFactorWeight(),
+    settings.getRecencyFactorWeight(),
+    settings.getEngagementFactorWeight()
+  ]);
   
   // Weighted combination
   const familiarityScore = (
-    comparisonFactor * 0.40 +
-    winRateFactor * 0.25 +
-    recencyFactor * 0.20 +
-    engagementFactor * 0.15
+    comparisonFactor * comparisonWeight +
+    winRateFactor * winRateWeight +
+    recencyFactor * recencyWeight +
+    engagementFactor * engagementWeight
   ) * 100.0;
   
   return Math.max(0.0, Math.min(100.0, familiarityScore));
@@ -86,12 +106,13 @@ const calculateFamiliarityScore = (item) => {
 /**
  * Calculate rating confidence (0-1)
  * Based on how many comparisons the item has
- * High confidence at MIN_COMPARISONS_FOR_CONFIDENCE comparisons
+ * High confidence at min_comparisons_for_confidence comparisons
  */
-const calculateRatingConfidence = (comparisonCount) => {
+const calculateRatingConfidence = async (comparisonCount) => {
   if (comparisonCount === 0) return 0.0;
-  if (comparisonCount >= MIN_COMPARISONS_FOR_CONFIDENCE) return 1.0;
-  return comparisonCount / MIN_COMPARISONS_FOR_CONFIDENCE;
+  const minComparisons = await settings.getMinComparisonsForConfidence();
+  if (comparisonCount >= minComparisons) return 1.0;
+  return comparisonCount / minComparisons;
 };
 
 /**
@@ -148,10 +169,10 @@ const updateFamiliarityMetrics = async (db, itemId, updates) => {
     // Calculate new metrics (only if requested)
     let familiarityScore, ratingConfidence;
     if (updates.familiarityScore) {
-      familiarityScore = calculateFamiliarityScore(item);
+      familiarityScore = await calculateFamiliarityScore(item);
     }
     if (updates.ratingConfidence) {
-      ratingConfidence = calculateRatingConfidence(item.comparison_count);
+      ratingConfidence = await calculateRatingConfidence(item.comparison_count);
     }
     
     // Update database
@@ -233,6 +254,7 @@ module.exports = {
   calculateFamiliarityScore,
   calculateRatingConfidence,
   updateFamiliarityMetrics,
-  MIN_COMPARISONS_FOR_CONFIDENCE
+  // Export default for backwards compatibility
+  MIN_COMPARISONS_FOR_CONFIDENCE: DEFAULT_MIN_COMPARISONS_FOR_CONFIDENCE
 };
 

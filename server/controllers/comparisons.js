@@ -5,6 +5,7 @@ const { getSelectionThresholds, getCooldownPeriod } = require('../utils/selectio
 const { updateFamiliarityMetrics } = require('../utils/familiarity-calculator');
 const { updateItemMetricsAfterVote } = require('../utils/item-metrics-updater');
 const { updateUserStatsInDatabase } = require('../utils/user-stats-calculator');
+const settings = require('../utils/settings');
 
 const getRandomComparison = async (req, res) => {
   const dbInstance = db.getDb();
@@ -375,13 +376,25 @@ const getRandomComparison = async (req, res) => {
     
     // SQLite version
     dbInstance.all(`
-      SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.rating_confidence,
-             c.id as category_id, c.name as category_name, c.slug as category_slug
-      FROM items i
-      LEFT JOIN categories c ON i.category_id = c.id
-      WHERE COALESCE(i.rating_confidence, 0) < 0.8 OR i.comparison_count < 20
-      ORDER BY (1.0 - COALESCE(i.rating_confidence, 0)) * (1.0 / (i.comparison_count + 1)) DESC, RANDOM()
-      LIMIT 20
+      Promise.all([
+        settings.getItemsNeedingVotesConfidenceThreshold(),
+        settings.getItemsNeedingVotesComparisonThreshold()
+      ]).then(([confidenceThreshold, comparisonThreshold]) => {
+        return new Promise((resolve, reject) => {
+          dbInstance.all(`
+            SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.rating_confidence,
+                   c.id as category_id, c.name as category_name, c.slug as category_slug
+            FROM items i
+            LEFT JOIN categories c ON i.category_id = c.id
+            WHERE COALESCE(i.rating_confidence, 0) < ? OR i.comparison_count < ?
+            ORDER BY (1.0 - COALESCE(i.rating_confidence, 0)) * (1.0 / (i.comparison_count + 1)) DESC, RANDOM()
+            LIMIT 20
+          `, [confidenceThreshold, comparisonThreshold], (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows);
+          });
+        });
+      }).then(rows => {
     `, (err, rows) => {
       if (err || !rows || rows.length < 2) {
         return fetchFromAllItems();
@@ -548,16 +561,19 @@ const submitVote = (req, res) => {
       }
       
       if (!item2.rating_confidence) item2.rating_confidence = 0;
-      processVote(item1Data, item2);
+      processVote(item1Data, item2).catch(err => {
+        console.error('Error in processVote:', err);
+        return res.status(500).json({ error: 'Failed to process vote' });
+      });
     });
   };
   
-  const processVote = (item1Data, item2Data) => {
+  const processVote = async (item1Data, item2Data) => {
     // Calculate new Elo ratings with dynamic K-factor based on confidence
     const item1Won = winnerId === item1Id;
     const confidence1 = item1Data.rating_confidence || 0;
     const confidence2 = item2Data.rating_confidence || 0;
-    const { newRating1, newRating2 } = updateEloRatings(
+    const { newRating1, newRating2 } = await updateEloRatings(
       item1Data.elo_rating,
       item2Data.elo_rating,
       item1Won,
@@ -569,7 +585,8 @@ const submitVote = (req, res) => {
     const ratingDiff = Math.abs(item1Data.elo_rating - item2Data.elo_rating);
     const winnerRating = item1Won ? item1Data.elo_rating : item2Data.elo_rating;
     const loserRating = item1Won ? item2Data.elo_rating : item1Data.elo_rating;
-    const wasUpset = ratingDiff > 200 && winnerRating < loserRating;
+    const upsetThreshold = await settings.getUpsetThreshold();
+    const wasUpset = ratingDiff > upsetThreshold && winnerRating < loserRating;
     
     // Insert comparison record with rating_difference and was_upset (include user_id if authenticated)
     const dbType = db.getDbType();

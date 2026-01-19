@@ -1149,15 +1149,83 @@ const ItemSubmissionsPanel = ({ onClose, onApprove, api }) => {
 
 // Settings Panel
 const SettingsPanel = ({ onClose, settings, settingsLoading, onUpdate, api }) => {
+  // Selection Algorithm
   const [familiarityWeight, setFamiliarityWeight] = useState(0.5);
   const [cooldownPeriod, setCooldownPeriod] = useState(30);
+  const [itemsNeedingVotesConfidence, setItemsNeedingVotesConfidence] = useState(0.8);
+  const [itemsNeedingVotesComparison, setItemsNeedingVotesComparison] = useState(20);
+  
+  // ELO Rating System
+  const [baseKFactor, setBaseKFactor] = useState(32);
+  const [highConfidenceK, setHighConfidenceK] = useState(16);
+  const [mediumConfidenceK, setMediumConfidenceK] = useState(24);
+  const [lowConfidenceK, setLowConfidenceK] = useState(32);
+  const [highConfidenceThreshold, setHighConfidenceThreshold] = useState(0.8);
+  const [mediumConfidenceThreshold, setMediumConfidenceThreshold] = useState(0.33);
+  
+  // Upset Detection
+  const [upsetThreshold, setUpsetThreshold] = useState(200);
+  
+  // Familiarity Calculation
+  const [minComparisonsForConfidence, setMinComparisonsForConfidence] = useState(30);
+  const [comparisonSaturationPoint, setComparisonSaturationPoint] = useState(50);
+  const [recencyDecayDays, setRecencyDecayDays] = useState(30);
+  const [comparisonFactorWeight, setComparisonFactorWeight] = useState(0.40);
+  const [winRateFactorWeight, setWinRateFactorWeight] = useState(0.25);
+  const [recencyFactorWeight, setRecencyFactorWeight] = useState(0.20);
+  const [engagementFactorWeight, setEngagementFactorWeight] = useState(0.15);
+  
+  // Wikipedia Auto-Fetch
+  const [apiDelay, setApiDelay] = useState(300);
+  const [minItemsThreshold, setMinItemsThreshold] = useState(50);
+  const [batchSize, setBatchSize] = useState(10);
+  const [growthBatchSize, setGrowthBatchSize] = useState(5);
+  const [growthIntervalMinutes, setGrowthIntervalMinutes] = useState(30);
+  
+  // Scheduler
+  const [schedulerIntervalMinutes, setSchedulerIntervalMinutes] = useState(10);
+  
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
+  const [activeSection, setActiveSection] = useState('selection');
 
   useEffect(() => {
     if (settings) {
+      // Selection Algorithm
       setFamiliarityWeight(settings.familiarity_weight?.value ?? 0.5);
       setCooldownPeriod(settings.cooldown_period?.value ?? 30);
+      setItemsNeedingVotesConfidence(settings.items_needing_votes_confidence_threshold?.value ?? 0.8);
+      setItemsNeedingVotesComparison(settings.items_needing_votes_comparison_threshold?.value ?? 20);
+      
+      // ELO Rating System
+      setBaseKFactor(settings.base_k_factor?.value ?? 32);
+      setHighConfidenceK(settings.high_confidence_k?.value ?? 16);
+      setMediumConfidenceK(settings.medium_confidence_k?.value ?? 24);
+      setLowConfidenceK(settings.low_confidence_k?.value ?? 32);
+      setHighConfidenceThreshold(settings.high_confidence_threshold?.value ?? 0.8);
+      setMediumConfidenceThreshold(settings.medium_confidence_threshold?.value ?? 0.33);
+      
+      // Upset Detection
+      setUpsetThreshold(settings.upset_threshold?.value ?? 200);
+      
+      // Familiarity Calculation
+      setMinComparisonsForConfidence(settings.min_comparisons_for_confidence?.value ?? 30);
+      setComparisonSaturationPoint(settings.comparison_saturation_point?.value ?? 50);
+      setRecencyDecayDays(settings.recency_decay_days?.value ?? 30);
+      setComparisonFactorWeight(settings.comparison_factor_weight?.value ?? 0.40);
+      setWinRateFactorWeight(settings.win_rate_factor_weight?.value ?? 0.25);
+      setRecencyFactorWeight(settings.recency_factor_weight?.value ?? 0.20);
+      setEngagementFactorWeight(settings.engagement_factor_weight?.value ?? 0.15);
+      
+      // Wikipedia Auto-Fetch
+      setApiDelay(settings.api_delay?.value ?? 300);
+      setMinItemsThreshold(settings.min_items_threshold?.value ?? 50);
+      setBatchSize(settings.batch_size?.value ?? 10);
+      setGrowthBatchSize(settings.growth_batch_size?.value ?? 5);
+      setGrowthIntervalMinutes(settings.growth_interval_minutes?.value ?? 30);
+      
+      // Scheduler
+      setSchedulerIntervalMinutes(settings.scheduler_interval_minutes?.value ?? 10);
     }
   }, [settings]);
 
@@ -1166,19 +1234,53 @@ const SettingsPanel = ({ onClose, settings, settingsLoading, onUpdate, api }) =>
     setMessage(null);
     try {
       await api.put('/api/admin/settings', {
+        // Selection Algorithm
         familiarity_weight: familiarityWeight,
-        cooldown_period: cooldownPeriod
+        cooldown_period: cooldownPeriod,
+        items_needing_votes_confidence_threshold: itemsNeedingVotesConfidence,
+        items_needing_votes_comparison_threshold: itemsNeedingVotesComparison,
+        
+        // ELO Rating System
+        base_k_factor: baseKFactor,
+        high_confidence_k: highConfidenceK,
+        medium_confidence_k: mediumConfidenceK,
+        low_confidence_k: lowConfidenceK,
+        high_confidence_threshold: highConfidenceThreshold,
+        medium_confidence_threshold: mediumConfidenceThreshold,
+        
+        // Upset Detection
+        upset_threshold: upsetThreshold,
+        
+        // Familiarity Calculation
+        min_comparisons_for_confidence: minComparisonsForConfidence,
+        comparison_saturation_point: comparisonSaturationPoint,
+        recency_decay_days: recencyDecayDays,
+        comparison_factor_weight: comparisonFactorWeight,
+        win_rate_factor_weight: winRateFactorWeight,
+        recency_factor_weight: recencyFactorWeight,
+        engagement_factor_weight: engagementFactorWeight,
+        
+        // Wikipedia Auto-Fetch
+        api_delay: apiDelay,
+        min_items_threshold: minItemsThreshold,
+        batch_size: batchSize,
+        growth_batch_size: growthBatchSize,
+        growth_interval_minutes: growthIntervalMinutes,
+        
+        // Scheduler
+        scheduler_interval_minutes: schedulerIntervalMinutes
       });
-      setMessage({ type: 'success', text: 'Settings saved successfully!' });
+      setMessage({ type: 'success', text: 'Settings saved successfully! Note: Scheduler interval changes require server restart.' });
       onUpdate();
       setTimeout(() => {
         setMessage(null);
-      }, 3000);
+      }, 5000);
     } catch (err) {
       console.error('Error saving settings:', err);
+      const errorMsg = err.response?.data?.error || err.response?.data?.details?.join(', ') || 'Failed to save settings';
       setMessage({ 
         type: 'error', 
-        text: err.response?.data?.error || 'Failed to save settings' 
+        text: errorMsg
       });
     } finally {
       setSaving(false);
@@ -1193,7 +1295,7 @@ const SettingsPanel = ({ onClose, settings, settingsLoading, onUpdate, api }) =>
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content settings-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>⚙️ Selection Algorithm Settings</h2>
+          <h2>⚙️ Application Settings</h2>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
@@ -1207,75 +1309,714 @@ const SettingsPanel = ({ onClose, settings, settingsLoading, onUpdate, api }) =>
               </div>
             )}
 
-            <div className="setting-group">
-              <label className="setting-label">
-                <span className="setting-name">Familiarity Weight</span>
-                <span className="setting-description">
-                  Percentage of selections that use familiarity-based selection (0.0 - 1.0)
-                </span>
-              </label>
-              <div className="setting-control">
-                <input
-                  type="number"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  value={familiarityWeight}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    if (!isNaN(val) && val >= 0 && val <= 1) {
-                      setFamiliarityWeight(val);
-                    }
-                  }}
-                  className="setting-input"
-                />
-                <div className="setting-preview">
-                  <div className="preview-breakdown">
-                    <div className="preview-item">
-                      <span className="preview-label">Familiarity:</span>
-                      <span className="preview-value">{(familiarityWeight * 100).toFixed(1)}%</span>
+            {/* Section Navigation */}
+            <div className="settings-sections-nav">
+              <button 
+                className={`section-nav-btn ${activeSection === 'selection' ? 'active' : ''}`}
+                onClick={() => setActiveSection('selection')}
+              >
+                Selection Algorithm
+              </button>
+              <button 
+                className={`section-nav-btn ${activeSection === 'elo' ? 'active' : ''}`}
+                onClick={() => setActiveSection('elo')}
+              >
+                ELO Rating
+              </button>
+              <button 
+                className={`section-nav-btn ${activeSection === 'upset' ? 'active' : ''}`}
+                onClick={() => setActiveSection('upset')}
+              >
+                Upset Detection
+              </button>
+              <button 
+                className={`section-nav-btn ${activeSection === 'familiarity' ? 'active' : ''}`}
+                onClick={() => setActiveSection('familiarity')}
+              >
+                Familiarity
+              </button>
+              <button 
+                className={`section-nav-btn ${activeSection === 'wikipedia' ? 'active' : ''}`}
+                onClick={() => setActiveSection('wikipedia')}
+              >
+                Wikipedia Fetch
+              </button>
+              <button 
+                className={`section-nav-btn ${activeSection === 'scheduler' ? 'active' : ''}`}
+                onClick={() => setActiveSection('scheduler')}
+              >
+                Scheduler
+              </button>
+            </div>
+
+            {/* Selection Algorithm Section */}
+            {activeSection === 'selection' && (
+              <div className="settings-section">
+                <h3 className="settings-section-title">Selection Algorithm</h3>
+                
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Familiarity Weight</span>
+                    <span className="setting-description">
+                      Percentage of selections that use familiarity-based selection (0.0 - 1.0)
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={familiarityWeight}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val) && val >= 0 && val <= 1) {
+                          setFamiliarityWeight(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                    <div className="setting-preview">
+                      <div className="preview-breakdown">
+                        <div className="preview-item">
+                          <span className="preview-label">Familiarity:</span>
+                          <span className="preview-value">{(familiarityWeight * 100).toFixed(1)}%</span>
+                        </div>
+                        <div className="preview-item">
+                          <span className="preview-label">Items Needing Votes:</span>
+                          <span className="preview-value">{itemsNeedingVotesPercent}%</span>
+                        </div>
+                        <div className="preview-item">
+                          <span className="preview-label">Random:</span>
+                          <span className="preview-value">{randomPercent}%</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="preview-item">
-                      <span className="preview-label">Items Needing Votes:</span>
-                      <span className="preview-value">{itemsNeedingVotesPercent}%</span>
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Cooldown Period</span>
+                    <span className="setting-description">
+                      Number of recent comparisons to exclude from familiarity-based selection (prevents repetition)
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={cooldownPeriod}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        if (!isNaN(val) && val >= 0) {
+                          setCooldownPeriod(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                    <div className="setting-preview">
+                      <p className="preview-text">
+                        Items from the last <strong>{cooldownPeriod}</strong> comparisons will be excluded from familiarity-based selection.
+                      </p>
                     </div>
-                    <div className="preview-item">
-                      <span className="preview-label">Random:</span>
-                      <span className="preview-value">{randomPercent}%</span>
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Items Needing Votes - Confidence Threshold</span>
+                    <span className="setting-description">
+                      Confidence level threshold for items needing more votes (0.0 - 1.0)
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={itemsNeedingVotesConfidence}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val) && val >= 0 && val <= 1) {
+                          setItemsNeedingVotesConfidence(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Items Needing Votes - Comparison Threshold</span>
+                    <span className="setting-description">
+                      Minimum comparison count threshold for items needing more votes
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={itemsNeedingVotesComparison}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        if (!isNaN(val) && val >= 1) {
+                          setItemsNeedingVotesComparison(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ELO Rating System Section */}
+            {activeSection === 'elo' && (
+              <div className="settings-section">
+                <h3 className="settings-section-title">ELO Rating System</h3>
+                
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Base K-Factor</span>
+                    <span className="setting-description">
+                      Base K-factor for ELO rating changes (higher = more volatile)
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={baseKFactor}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val) && val >= 0 && val <= 100) {
+                          setBaseKFactor(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">High Confidence K-Factor</span>
+                    <span className="setting-description">
+                      K-factor for items with high confidence (>= {highConfidenceThreshold}) - lower = more stable
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={highConfidenceK}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val) && val >= 0 && val <= 100) {
+                          setHighConfidenceK(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Medium Confidence K-Factor</span>
+                    <span className="setting-description">
+                      K-factor for items with medium confidence (>= {mediumConfidenceThreshold})
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={mediumConfidenceK}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val) && val >= 0 && val <= 100) {
+                          setMediumConfidenceK(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Low Confidence K-Factor</span>
+                    <span className="setting-description">
+                      K-factor for items with low confidence (< {mediumConfidenceThreshold}) - higher = learns faster
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={lowConfidenceK}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val) && val >= 0 && val <= 100) {
+                          setLowConfidenceK(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">High Confidence Threshold</span>
+                    <span className="setting-description">
+                      Confidence level threshold for high confidence classification (0.0 - 1.0)
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={highConfidenceThreshold}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val) && val >= 0 && val <= 1) {
+                          setHighConfidenceThreshold(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Medium Confidence Threshold</span>
+                    <span className="setting-description">
+                      Confidence level threshold for medium confidence classification (0.0 - 1.0)
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={mediumConfidenceThreshold}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val) && val >= 0 && val <= 1) {
+                          setMediumConfidenceThreshold(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Upset Detection Section */}
+            {activeSection === 'upset' && (
+              <div className="settings-section">
+                <h3 className="settings-section-title">Upset Detection</h3>
+                
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Upset Threshold</span>
+                    <span className="setting-description">
+                      ELO point difference required for a result to be considered an upset
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={upsetThreshold}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val) && val >= 0) {
+                          setUpsetThreshold(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                    <div className="setting-preview">
+                      <p className="preview-text">
+                        A result is considered an upset when the rating difference is greater than <strong>{upsetThreshold}</strong> points and the lower-rated item wins.
+                      </p>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
-            <div className="setting-group">
-              <label className="setting-label">
-                <span className="setting-name">Cooldown Period</span>
-                <span className="setting-description">
-                  Number of recent comparisons to exclude from familiarity-based selection (prevents repetition)
-                </span>
-              </label>
-              <div className="setting-control">
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={cooldownPeriod}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value);
-                    if (!isNaN(val) && val >= 0) {
-                      setCooldownPeriod(val);
-                    }
-                  }}
-                  className="setting-input"
-                />
-                <div className="setting-preview">
-                  <p className="preview-text">
-                    Items from the last <strong>{cooldownPeriod}</strong> comparisons will be excluded from familiarity-based selection.
-                  </p>
+            {/* Familiarity Calculation Section */}
+            {activeSection === 'familiarity' && (
+              <div className="settings-section">
+                <h3 className="settings-section-title">Familiarity Calculation</h3>
+                
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Min Comparisons for Confidence</span>
+                    <span className="setting-description">
+                      Number of comparisons needed for full rating confidence
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={minComparisonsForConfidence}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        if (!isNaN(val) && val >= 1) {
+                          setMinComparisonsForConfidence(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Comparison Saturation Point</span>
+                    <span className="setting-description">
+                      Number of comparisons where familiarity score saturates (reaches maximum)
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={comparisonSaturationPoint}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        if (!isNaN(val) && val >= 1) {
+                          setComparisonSaturationPoint(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Recency Decay Days</span>
+                    <span className="setting-description">
+                      Number of days for recency factor to decay in familiarity calculation
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={recencyDecayDays}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        if (!isNaN(val) && val >= 1) {
+                          setRecencyDecayDays(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Comparison Factor Weight</span>
+                    <span className="setting-description">
+                      Weight for comparison count in familiarity score (0.0 - 1.0). Total of all weights should equal 1.0.
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={comparisonFactorWeight}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val) && val >= 0 && val <= 1) {
+                          setComparisonFactorWeight(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Win Rate Factor Weight</span>
+                    <span className="setting-description">
+                      Weight for win rate in familiarity score (0.0 - 1.0)
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={winRateFactorWeight}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val) && val >= 0 && val <= 1) {
+                          setWinRateFactorWeight(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Recency Factor Weight</span>
+                    <span className="setting-description">
+                      Weight for recency in familiarity score (0.0 - 1.0)
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={recencyFactorWeight}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val) && val >= 0 && val <= 1) {
+                          setRecencyFactorWeight(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Engagement Factor Weight</span>
+                    <span className="setting-description">
+                      Weight for engagement (low skip rate) in familiarity score (0.0 - 1.0)
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={engagementFactorWeight}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val) && val >= 0 && val <= 1) {
+                          setEngagementFactorWeight(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                    <div className="setting-preview">
+                      <p className="preview-text">
+                        Total weight: <strong>{(comparisonFactorWeight + winRateFactorWeight + recencyFactorWeight + engagementFactorWeight).toFixed(2)}</strong> 
+                        {Math.abs((comparisonFactorWeight + winRateFactorWeight + recencyFactorWeight + engagementFactorWeight) - 1.0) > 0.01 && (
+                          <span style={{color: '#ff9999'}}> (should be 1.0)</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
+
+            {/* Wikipedia Auto-Fetch Section */}
+            {activeSection === 'wikipedia' && (
+              <div className="settings-section">
+                <h3 className="settings-section-title">Wikipedia Auto-Fetch</h3>
+                
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">API Delay (ms)</span>
+                    <span className="setting-description">
+                      Delay between Wikipedia API calls in milliseconds (be respectful!)
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="0"
+                      step="100"
+                      value={apiDelay}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        if (!isNaN(val) && val >= 0) {
+                          setApiDelay(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Min Items Threshold</span>
+                    <span className="setting-description">
+                      Minimum items before auto-fetching starts
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={minItemsThreshold}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        if (!isNaN(val) && val >= 0) {
+                          setMinItemsThreshold(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Batch Size</span>
+                    <span className="setting-description">
+                      Items to fetch per batch
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={batchSize}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        if (!isNaN(val) && val >= 1) {
+                          setBatchSize(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Growth Batch Size</span>
+                    <span className="setting-description">
+                      Items added during growth phase (when above threshold)
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={growthBatchSize}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        if (!isNaN(val) && val >= 1) {
+                          setGrowthBatchSize(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Growth Interval (minutes)</span>
+                    <span className="setting-description">
+                      Minutes between growth batches
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={growthIntervalMinutes}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        if (!isNaN(val) && val >= 1) {
+                          setGrowthIntervalMinutes(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Scheduler Section */}
+            {activeSection === 'scheduler' && (
+              <div className="settings-section">
+                <h3 className="settings-section-title">Scheduler</h3>
+                
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Scheduler Interval (minutes)</span>
+                    <span className="setting-description">
+                      Minutes between auto-fetch checks. Note: Changes require server restart to take effect.
+                    </span>
+                  </label>
+                  <div className="setting-control">
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={schedulerIntervalMinutes}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        if (!isNaN(val) && val >= 1) {
+                          setSchedulerIntervalMinutes(val);
+                        }
+                      }}
+                      className="setting-input"
+                    />
+                    <div className="setting-preview">
+                      <p className="preview-text">
+                        The scheduler will check for new items every <strong>{schedulerIntervalMinutes}</strong> minutes.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="settings-actions">
               <button 
@@ -1283,7 +2024,7 @@ const SettingsPanel = ({ onClose, settings, settingsLoading, onUpdate, api }) =>
                 onClick={handleSave}
                 disabled={saving}
               >
-                {saving ? 'Saving...' : 'Save Settings'}
+                {saving ? 'Saving...' : 'Save All Settings'}
               </button>
               <button 
                 className="cancel-button" 

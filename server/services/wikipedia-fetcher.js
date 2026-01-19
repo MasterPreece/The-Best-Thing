@@ -1,5 +1,6 @@
 const axios = require('axios');
 const db = require('../database');
+const settings = require('../utils/settings');
 
 // Wikipedia API endpoint
 const WIKIPEDIA_API = 'https://en.wikipedia.org/w/api.php';
@@ -8,18 +9,12 @@ const WIKIPEDIA_API = 'https://en.wikipedia.org/w/api.php';
 const UNSPLASH_API = 'https://api.unsplash.com';
 const UNSPLASH_ACCESS_KEY = process.env.UNSPLASH_ACCESS_KEY || null;
 
-// Rate limiting: delay between API calls (ms) - be respectful!
-const API_DELAY = 300;
-
-// Minimum items before we start fetching more
-const MIN_ITEMS_THRESHOLD = 50;
-
-// Maximum items to fetch in one batch
-const BATCH_SIZE = 10;
-
-// Growth settings - continue adding items over time
-const GROWTH_BATCH_SIZE = 5; // Add 5 items at a time for continuous growth
-const GROWTH_INTERVAL = 30 * 60 * 1000; // Add items every 30 minutes (when above threshold)
+// Default values (used as fallback)
+const DEFAULT_API_DELAY = 300;
+const DEFAULT_MIN_ITEMS_THRESHOLD = 50;
+const DEFAULT_BATCH_SIZE = 10;
+const DEFAULT_GROWTH_BATCH_SIZE = 5;
+const DEFAULT_GROWTH_INTERVAL = 30 * 60 * 1000; // 30 minutes
 
 // Track if we're currently fetching to avoid duplicate requests
 let isFetching = false;
@@ -209,7 +204,8 @@ const getArticlesFromCategory = async (categoryName, count = 50) => {
       if (response.data.continue && response.data.continue.cmcontinue && allArticles.length < fetchTarget) {
         continueToken = response.data.continue.cmcontinue;
         // Be respectful with rate limiting
-        await new Promise(resolve => setTimeout(resolve, API_DELAY));
+        const apiDelay = await settings.getApiDelay();
+        await new Promise(resolve => setTimeout(resolve, apiDelay));
       } else {
         break; // No more results or we have enough
       }
@@ -309,12 +305,14 @@ const getArticlesWithPageviews = async (articleTitles) => {
       }
       
       // Rate limiting between requests
-      await new Promise(resolve => setTimeout(resolve, API_DELAY));
+      const apiDelay = await settings.getApiDelay();
+      await new Promise(resolve => setTimeout(resolve, apiDelay));
     }
     
     // Extra delay between batches
     if (i + batchSize < articleTitles.length) {
-      await new Promise(resolve => setTimeout(resolve, API_DELAY * 2));
+      const apiDelay = await settings.getApiDelay();
+      await new Promise(resolve => setTimeout(resolve, apiDelay * 2));
     }
   }
   
@@ -496,26 +494,40 @@ const checkAndFetchIfNeeded = async () => {
       const itemCount = row.count;
       const now = Date.now();
       
-      // Check if we're already fetching or recently fetched
-      if (isFetching || (now - lastFetchTime) < MIN_FETCH_INTERVAL) {
-        return resolve();
-      }
-      
-      // If below threshold, fetch to reach minimum
-      if (itemCount < MIN_ITEMS_THRESHOLD) {
-        console.log(`Database has ${itemCount} items (below threshold of ${MIN_ITEMS_THRESHOLD}). Fetching more...`);
-        fetchMoreItems(itemCount).then(() => resolve()).catch(() => resolve());
-        return;
-      }
-      
-      // If above threshold, continue growing slowly (every 30 minutes)
-      // This ensures the database keeps growing as people use the tool
-      if ((now - lastGrowthFetch) >= GROWTH_INTERVAL) {
-        console.log(`Database has ${itemCount} items. Adding ${GROWTH_BATCH_SIZE} more items for continuous growth...`);
-        lastGrowthFetch = now;
-        fetchMoreItems(itemCount, true, GROWTH_BATCH_SIZE).then(() => resolve()).catch(() => resolve());
-        return;
-      }
+      // Get settings
+      Promise.all([
+        settings.getMinItemsThreshold(),
+        settings.getGrowthBatchSize(),
+        settings.getGrowthIntervalMinutes()
+      ]).then(async ([minItemsThreshold, growthBatchSize, growthIntervalMinutes]) => {
+        const growthInterval = growthIntervalMinutes * 60 * 1000;
+        
+        // Check if we're already fetching or recently fetched
+        if (isFetching || (now - lastFetchTime) < MIN_FETCH_INTERVAL) {
+          return resolve();
+        }
+        
+        // If below threshold, fetch to reach minimum
+        if (itemCount < minItemsThreshold) {
+          console.log(`Database has ${itemCount} items (below threshold of ${minItemsThreshold}). Fetching more...`);
+          fetchMoreItems(itemCount).then(() => resolve()).catch(() => resolve());
+          return;
+        }
+        
+        // If above threshold, continue growing slowly
+        // This ensures the database keeps growing as people use the tool
+        if ((now - lastGrowthFetch) >= growthInterval) {
+          console.log(`Database has ${itemCount} items. Adding ${growthBatchSize} more items for continuous growth...`);
+          lastGrowthFetch = now;
+          fetchMoreItems(itemCount, true, growthBatchSize).then(() => resolve()).catch(() => resolve());
+          return;
+        }
+        
+        resolve();
+      }).catch(err => {
+        console.error('Error getting settings in checkAndFetchIfNeeded:', err);
+        resolve();
+      });
       
       // Nothing to do right now
       resolve();
@@ -527,7 +539,8 @@ const checkAndFetchIfNeeded = async () => {
  * Fetch more items to add to database
  * Mixes popular and random articles for variety
  */
-const fetchMoreItems = async (currentCount = 0, usePopular = true, batchSize = BATCH_SIZE) => {
+const fetchMoreItems = async (currentCount = 0, usePopular = true, batchSizeParam = null) => {
+  const batchSize = batchSizeParam || await settings.getBatchSize();
   if (isFetching) return;
   
   isFetching = true;
@@ -649,7 +662,8 @@ const fetchMoreItems = async (currentCount = 0, usePopular = true, batchSize = B
     
     // Check if we need more (only if below threshold)
     dbInstance.get(`SELECT COUNT(*) as count FROM items`, [], async (err, row) => {
-      if (!err && row.count < MIN_ITEMS_THRESHOLD) {
+      const minItemsThreshold = await settings.getMinItemsThreshold();
+      if (!err && row.count < minItemsThreshold) {
         // Still need more, but wait a bit before fetching again
         setTimeout(() => {
           isFetching = false;

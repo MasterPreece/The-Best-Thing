@@ -283,7 +283,29 @@ const createTables = async () => {
         INSERT INTO settings (key, value, description)
         VALUES 
           ('familiarity_weight', '0.5', 'Familiarity weight for item selection (0.0-1.0)'),
-          ('cooldown_period', '30', 'Number of recent comparisons to exclude from familiarity selection')
+          ('cooldown_period', '30', 'Number of recent comparisons to exclude from familiarity selection'),
+          ('base_k_factor', '32', 'Base K-factor for ELO rating changes'),
+          ('high_confidence_k', '16', 'K-factor for high confidence items (>= 0.8)'),
+          ('medium_confidence_k', '24', 'K-factor for medium confidence items (>= 0.33)'),
+          ('low_confidence_k', '32', 'K-factor for low confidence items (< 0.33)'),
+          ('high_confidence_threshold', '0.8', 'Confidence level threshold for high confidence'),
+          ('medium_confidence_threshold', '0.33', 'Confidence level threshold for medium confidence'),
+          ('upset_threshold', '200', 'ELO point difference required for an upset'),
+          ('min_comparisons_for_confidence', '30', 'Comparisons needed for full rating confidence'),
+          ('comparison_saturation_point', '50', 'Comparisons where familiarity score saturates'),
+          ('recency_decay_days', '30', 'Days for recency factor to decay in familiarity calculation'),
+          ('comparison_factor_weight', '0.40', 'Weight for comparison count in familiarity score (0.0-1.0)'),
+          ('win_rate_factor_weight', '0.25', 'Weight for win rate in familiarity score (0.0-1.0)'),
+          ('recency_factor_weight', '0.20', 'Weight for recency in familiarity score (0.0-1.0)'),
+          ('engagement_factor_weight', '0.15', 'Weight for engagement in familiarity score (0.0-1.0)'),
+          ('api_delay', '300', 'Delay between Wikipedia API calls in milliseconds'),
+          ('min_items_threshold', '50', 'Minimum items before auto-fetching starts'),
+          ('batch_size', '10', 'Items to fetch per batch'),
+          ('growth_batch_size', '5', 'Items added during growth phase'),
+          ('growth_interval_minutes', '30', 'Minutes between growth batches'),
+          ('scheduler_interval_minutes', '10', 'Minutes between auto-fetch checks'),
+          ('items_needing_votes_confidence_threshold', '0.8', 'Confidence threshold for items needing votes'),
+          ('items_needing_votes_comparison_threshold', '20', 'Comparison count threshold for items needing votes')
         ON CONFLICT (key) DO NOTHING
       `);
       
@@ -430,19 +452,89 @@ const createTables = async () => {
                                                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                                                 UNIQUE(user_id, comparison_id)
                                               )`, () => {
-                                                db.run(`CREATE INDEX IF NOT EXISTS idx_collections_user_id ON collections(user_id)`, () => {
-                                                  db.run(`CREATE INDEX IF NOT EXISTS idx_collections_comparison_id ON collections(comparison_id)`, () => {
-                                                    // Enable foreign keys for SQLite
-                                                    db.run(`PRAGMA foreign_keys = ON`, (err) => {
-                                                      if (err) {
-                                                        console.error('Error enabling foreign keys:', err);
-                                                        return reject(err);
-                                                      }
-                                                      console.log('SQLite tables created successfully');
-                                                      resolve();
+                                              db.run(`CREATE INDEX IF NOT EXISTS idx_collections_user_id ON collections(user_id)`, () => {
+                                                db.run(`CREATE INDEX IF NOT EXISTS idx_collections_comparison_id ON collections(comparison_id)`, () => {
+                                                  // Settings table - for storing application configuration
+                                                  db.run(`CREATE TABLE IF NOT EXISTS settings (
+                                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                    key TEXT NOT NULL UNIQUE,
+                                                    value TEXT NOT NULL,
+                                                    description TEXT,
+                                                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                                                  )`, (err) => {
+                                                    if (err) {
+                                                      console.error('Error creating settings table:', err);
+                                                      return reject(err);
+                                                    }
+                                                    console.log('✓ Created settings table');
+                                                    
+                                                    // Initialize default settings if they don't exist
+                                                    const defaultSettings = [
+                                                      ['familiarity_weight', '0.5', 'Familiarity weight for item selection (0.0-1.0)'],
+                                                      ['cooldown_period', '30', 'Number of recent comparisons to exclude from familiarity selection'],
+                                                      ['base_k_factor', '32', 'Base K-factor for ELO rating changes'],
+                                                      ['high_confidence_k', '16', 'K-factor for high confidence items (>= 0.8)'],
+                                                      ['medium_confidence_k', '24', 'K-factor for medium confidence items (>= 0.33)'],
+                                                      ['low_confidence_k', '32', 'K-factor for low confidence items (< 0.33)'],
+                                                      ['high_confidence_threshold', '0.8', 'Confidence level threshold for high confidence'],
+                                                      ['medium_confidence_threshold', '0.33', 'Confidence level threshold for medium confidence'],
+                                                      ['upset_threshold', '200', 'ELO point difference required for an upset'],
+                                                      ['min_comparisons_for_confidence', '30', 'Comparisons needed for full rating confidence'],
+                                                      ['comparison_saturation_point', '50', 'Comparisons where familiarity score saturates'],
+                                                      ['recency_decay_days', '30', 'Days for recency factor to decay in familiarity calculation'],
+                                                      ['comparison_factor_weight', '0.40', 'Weight for comparison count in familiarity score (0.0-1.0)'],
+                                                      ['win_rate_factor_weight', '0.25', 'Weight for win rate in familiarity score (0.0-1.0)'],
+                                                      ['recency_factor_weight', '0.20', 'Weight for recency in familiarity score (0.0-1.0)'],
+                                                      ['engagement_factor_weight', '0.15', 'Weight for engagement in familiarity score (0.0-1.0)'],
+                                                      ['api_delay', '300', 'Delay between Wikipedia API calls in milliseconds'],
+                                                      ['min_items_threshold', '50', 'Minimum items before auto-fetching starts'],
+                                                      ['batch_size', '10', 'Items to fetch per batch'],
+                                                      ['growth_batch_size', '5', 'Items added during growth phase'],
+                                                      ['growth_interval_minutes', '30', 'Minutes between growth batches'],
+                                                      ['scheduler_interval_minutes', '10', 'Minutes between auto-fetch checks'],
+                                                      ['items_needing_votes_confidence_threshold', '0.8', 'Confidence threshold for items needing votes'],
+                                                      ['items_needing_votes_comparison_threshold', '20', 'Comparison count threshold for items needing votes']
+                                                    ];
+                                                    
+                                                    let settingsInserted = 0;
+                                                    const totalSettings = defaultSettings.length;
+                                                    
+                                                    if (totalSettings === 0) {
+                                                      // No settings to insert, proceed to foreign keys
+                                                      db.run(`PRAGMA foreign_keys = ON`, (err) => {
+                                                        if (err) {
+                                                          console.error('Error enabling foreign keys:', err);
+                                                          return reject(err);
+                                                        }
+                                                        console.log('SQLite tables created successfully');
+                                                        resolve();
+                                                      });
+                                                      return;
+                                                    }
+                                                    
+                                                    defaultSettings.forEach(([key, value, description], index) => {
+                                                      db.run(`INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)`, 
+                                                        [key, value, description], (err) => {
+                                                          if (err) {
+                                                            console.error(`Error inserting setting ${key}:`, err);
+                                                          }
+                                                          settingsInserted++;
+                                                          if (settingsInserted === totalSettings) {
+                                                            // Enable foreign keys for SQLite
+                                                            db.run(`PRAGMA foreign_keys = ON`, (err) => {
+                                                              if (err) {
+                                                                console.error('Error enabling foreign keys:', err);
+                                                                return reject(err);
+                                                              }
+                                                              console.log('SQLite tables created successfully');
+                                                              resolve();
+                                                            });
+                                                          }
+                                                        });
                                                     });
                                                   });
                                                 });
+                                              });
                                               });
                                             });
                                           });

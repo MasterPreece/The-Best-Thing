@@ -544,8 +544,13 @@ const getSettings = async (req, res) => {
       
       const settings = {};
       result.rows.forEach(row => {
+        // Determine if setting is float or int
+        const isFloat = row.key.includes('weight') || 
+                       row.key.includes('threshold') || 
+                       row.key.includes('k_factor') ||
+                       row.key === 'familiarity_weight';
         settings[row.key] = {
-          value: row.key === 'familiarity_weight' ? parseFloat(row.value) : parseInt(row.value),
+          value: isFloat ? parseFloat(row.value) : parseInt(row.value),
           description: row.description,
           updated_at: row.updated_at
         };
@@ -565,8 +570,13 @@ const getSettings = async (req, res) => {
         
         const settings = {};
         rows.forEach(row => {
+          // Determine if setting is float or int
+          const isFloat = row.key.includes('weight') || 
+                         row.key.includes('threshold') || 
+                         row.key.includes('k_factor') ||
+                         row.key === 'familiarity_weight';
           settings[row.key] = {
-            value: row.key === 'familiarity_weight' ? parseFloat(row.value) : parseInt(row.value),
+            value: isFloat ? parseFloat(row.value) : parseInt(row.value),
             description: row.description,
             updated_at: row.updated_at
           };
@@ -584,30 +594,159 @@ const getSettings = async (req, res) => {
 /**
  * Update application settings
  * PUT /api/admin/settings
- * Body: { familiarity_weight?: number, cooldown_period?: number }
+ * Body: { setting_key: value, ... }
  */
 const updateSettings = async (req, res) => {
   try {
-    const { familiarity_weight, cooldown_period } = req.body;
+    const settingsToUpdate = req.body;
     const dbType = db.getDbType();
     const dbInstance = db.getDb();
     
     const updates = [];
+    const validationErrors = [];
     
-    if (familiarity_weight !== undefined) {
-      const weight = parseFloat(familiarity_weight);
-      if (isNaN(weight) || weight < 0 || weight > 1) {
-        return res.status(400).json({ error: 'familiarity_weight must be between 0 and 1' });
+    // Validation rules for each setting
+    const validations = {
+      familiarity_weight: (v) => {
+        const val = parseFloat(v);
+        if (isNaN(val) || val < 0 || val > 1) return 'must be between 0 and 1';
+        return null;
+      },
+      cooldown_period: (v) => {
+        const val = parseInt(v);
+        if (isNaN(val) || val < 0) return 'must be a non-negative integer';
+        return null;
+      },
+      base_k_factor: (v) => {
+        const val = parseFloat(v);
+        if (isNaN(val) || val < 0 || val > 100) return 'must be between 0 and 100';
+        return null;
+      },
+      high_confidence_k: (v) => {
+        const val = parseFloat(v);
+        if (isNaN(val) || val < 0 || val > 100) return 'must be between 0 and 100';
+        return null;
+      },
+      medium_confidence_k: (v) => {
+        const val = parseFloat(v);
+        if (isNaN(val) || val < 0 || val > 100) return 'must be between 0 and 100';
+        return null;
+      },
+      low_confidence_k: (v) => {
+        const val = parseFloat(v);
+        if (isNaN(val) || val < 0 || val > 100) return 'must be between 0 and 100';
+        return null;
+      },
+      high_confidence_threshold: (v) => {
+        const val = parseFloat(v);
+        if (isNaN(val) || val < 0 || val > 1) return 'must be between 0 and 1';
+        return null;
+      },
+      medium_confidence_threshold: (v) => {
+        const val = parseFloat(v);
+        if (isNaN(val) || val < 0 || val > 1) return 'must be between 0 and 1';
+        return null;
+      },
+      upset_threshold: (v) => {
+        const val = parseFloat(v);
+        if (isNaN(val) || val < 0) return 'must be a non-negative number';
+        return null;
+      },
+      min_comparisons_for_confidence: (v) => {
+        const val = parseInt(v);
+        if (isNaN(val) || val < 1) return 'must be a positive integer';
+        return null;
+      },
+      comparison_saturation_point: (v) => {
+        const val = parseInt(v);
+        if (isNaN(val) || val < 1) return 'must be a positive integer';
+        return null;
+      },
+      recency_decay_days: (v) => {
+        const val = parseInt(v);
+        if (isNaN(val) || val < 1) return 'must be a positive integer';
+        return null;
+      },
+      comparison_factor_weight: (v) => {
+        const val = parseFloat(v);
+        if (isNaN(val) || val < 0 || val > 1) return 'must be between 0 and 1';
+        return null;
+      },
+      win_rate_factor_weight: (v) => {
+        const val = parseFloat(v);
+        if (isNaN(val) || val < 0 || val > 1) return 'must be between 0 and 1';
+        return null;
+      },
+      recency_factor_weight: (v) => {
+        const val = parseFloat(v);
+        if (isNaN(val) || val < 0 || val > 1) return 'must be between 0 and 1';
+        return null;
+      },
+      engagement_factor_weight: (v) => {
+        const val = parseFloat(v);
+        if (isNaN(val) || val < 0 || val > 1) return 'must be between 0 and 1';
+        return null;
+      },
+      api_delay: (v) => {
+        const val = parseInt(v);
+        if (isNaN(val) || val < 0) return 'must be a non-negative integer';
+        return null;
+      },
+      min_items_threshold: (v) => {
+        const val = parseInt(v);
+        if (isNaN(val) || val < 0) return 'must be a non-negative integer';
+        return null;
+      },
+      batch_size: (v) => {
+        const val = parseInt(v);
+        if (isNaN(val) || val < 1) return 'must be a positive integer';
+        return null;
+      },
+      growth_batch_size: (v) => {
+        const val = parseInt(v);
+        if (isNaN(val) || val < 1) return 'must be a positive integer';
+        return null;
+      },
+      growth_interval_minutes: (v) => {
+        const val = parseInt(v);
+        if (isNaN(val) || val < 1) return 'must be a positive integer';
+        return null;
+      },
+      scheduler_interval_minutes: (v) => {
+        const val = parseInt(v);
+        if (isNaN(val) || val < 1) return 'must be a positive integer';
+        return null;
+      },
+      items_needing_votes_confidence_threshold: (v) => {
+        const val = parseFloat(v);
+        if (isNaN(val) || val < 0 || val > 1) return 'must be between 0 and 1';
+        return null;
+      },
+      items_needing_votes_comparison_threshold: (v) => {
+        const val = parseInt(v);
+        if (isNaN(val) || val < 1) return 'must be a positive integer';
+        return null;
       }
-      updates.push({ key: 'familiarity_weight', value: weight.toString() });
+    };
+    
+    // Process each setting
+    for (const [key, value] of Object.entries(settingsToUpdate)) {
+      if (validations[key]) {
+        const error = validations[key](value);
+        if (error) {
+          validationErrors.push(`${key}: ${error}`);
+          continue;
+        }
+      }
+      
+      // Determine if it's a float or int based on key
+      const isFloat = key.includes('weight') || key.includes('threshold') || key.includes('k_factor');
+      const stringValue = isFloat ? parseFloat(value).toString() : parseInt(value).toString();
+      updates.push({ key, value: stringValue });
     }
     
-    if (cooldown_period !== undefined) {
-      const period = parseInt(cooldown_period);
-      if (isNaN(period) || period < 0) {
-        return res.status(400).json({ error: 'cooldown_period must be a non-negative integer' });
-      }
-      updates.push({ key: 'cooldown_period', value: period.toString() });
+    if (validationErrors.length > 0) {
+      return res.status(400).json({ error: 'Validation errors', details: validationErrors });
     }
     
     if (updates.length === 0) {
@@ -624,7 +763,7 @@ const updateSettings = async (req, res) => {
       }
       
       // Invalidate cache
-      const { invalidateSettingsCache } = require('../utils/selection-config');
+      const { invalidateSettingsCache } = require('../utils/settings');
       invalidateSettingsCache();
       
       res.json({ 
@@ -650,7 +789,7 @@ const updateSettings = async (req, res) => {
           completed++;
           if (completed === total) {
             // Invalidate cache
-            const { invalidateSettingsCache } = require('../utils/selection-config');
+            const { invalidateSettingsCache } = require('../utils/settings');
             invalidateSettingsCache();
             
             res.json({ 

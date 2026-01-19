@@ -156,7 +156,6 @@ module.exports = {
   getFamiliarityWeight,
   getVarietyWeight,
   getSelectionThresholds,
-  getCooldownPeriod,
-  invalidateSettingsCache
+  getCooldownPeriod
 };
 
