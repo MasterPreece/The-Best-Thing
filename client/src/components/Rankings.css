@@ -133,6 +133,8 @@
   font-style: italic;
 }
 
+.category-filter,
+.sort-controls,
 .limit-controls {
   display: inline-flex;
   align-items: center;
@@ -142,8 +144,22 @@
   border-radius: 10px;
   backdrop-filter: blur(10px);
   margin-top: 1rem;
+  margin-left: 0.5rem;
+  margin-right: 0.5rem;
   flex-wrap: wrap;
   justify-content: center;
+}
+
+.category-filter {
+  margin-top: 1rem;
+}
+
+.sort-controls {
+  margin-top: 1rem;
+}
+
+.limit-controls {
+  margin-top: 1rem;
 }
 
 .total-items-info {
@@ -152,6 +168,8 @@
   font-style: italic;
 }
 
+.category-select,
+.sort-select,
 .limit-select {
   padding: 0.5rem;
   border: none;

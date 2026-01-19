@@ -17,6 +17,7 @@ const Rankings = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('');
+  const [sortOrder, setSortOrder] = useState('highest'); // 'highest' or 'lowest'
   const [showItemModal, setShowItemModal] = useState(false);
 
   const fetchCategories = useCallback(async () => {
@@ -38,7 +39,8 @@ const Rankings = () => {
     setSearchResults(null);
     try {
       const categoryParam = selectedCategory ? `&category_id=${selectedCategory}` : '';
-      const response = await axios.get(`/api/items/ranking?limit=${limit}${categoryParam}`);
+      const sortParam = sortOrder === 'lowest' ? `&sort=lowest` : '';
+      const response = await axios.get(`/api/items/ranking?limit=${limit}${categoryParam}${sortParam}`);
       setRankings(response.data.rankings || []);
       setTotalItems(response.data.total || response.data.rankings?.length || 0);
     } catch (error) {
@@ -50,7 +52,7 @@ const Rankings = () => {
     } finally {
       setLoading(false);
     }
-  }, [limit, selectedCategory]);
+  }, [limit, selectedCategory, sortOrder]);
 
   const performSearch = useCallback(async (query) => {
     if (!query || query.trim().length === 0) {
@@ -165,6 +167,17 @@ const Rankings = () => {
                     {cat.name} ({cat.item_count || 0})
                   </option>
                 ))}
+              </select>
+            </div>
+            <div className="sort-controls">
+              <label>Sort by:</label>
+              <select
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value)}
+                className="sort-select"
+              >
+                <option value="highest">Highest Rated</option>
+                <option value="lowest">Lowest Rated</option>
               </select>
             </div>
             <div className="limit-controls">

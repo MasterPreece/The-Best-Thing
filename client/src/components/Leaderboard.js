@@ -92,42 +92,82 @@ const Leaderboard = () => {
             No leaderboard data yet. Start comparing items to see your rank!
           </div>
         ) : (
-          leaderboard.map((user) => (
-            <div
-              key={user.identifier || user.sessionId || user.username}
-              className={`leaderboard-item ${user.rank <= 3 ? 'top-three' : ''}`}
-            >
-              <div className="leaderboard-rank">
-                {getMedal(user.rank) || `#${user.rank}`}
-              </div>
-              <div className="leaderboard-user">
-                <div className="user-id">
-                  {user.username ? (
-                    <span>
-                      👤 {user.username}
-                      <span className="user-type-badge">Registered</span>
-                    </span>
-                  ) : (
-                    <span>
-                      🎲 {(user.sessionId || user.identifier || 'Anonymous').substring(0, 20)}
-                      {user.sessionId && user.sessionId.length > 20 ? '...' : ''}
-                      <span className="user-type-badge">Anonymous</span>
-                    </span>
-                  )}
+          leaderboard.map((user) => {
+            const hasBadges = user.isTopUpset || user.isTopStreak || user.isTopAvgDiff || user.isTopUpsetRate;
+            
+            return (
+              <div
+                key={user.identifier || user.sessionId || user.username}
+                className={`leaderboard-item ${user.rank <= 3 ? 'top-three' : ''} ${hasBadges ? 'top-performer' : ''}`}
+              >
+                <div className="leaderboard-rank">
+                  {getMedal(user.rank) || `#${user.rank}`}
                 </div>
-                <div className="user-stats">
-                  <span className="stat-badge">
-                    {user.comparisonsCount} comparisons
-                  </span>
-                  {user.lastActive && (
-                    <span className="last-active">
-                      Last active: {new Date(user.lastActive).toLocaleDateString()}
-                    </span>
+                <div className="leaderboard-user">
+                  <div className="user-id">
+                    {user.username ? (
+                      <span>
+                        👤 {user.username}
+                        <span className="user-type-badge">Registered</span>
+                      </span>
+                    ) : (
+                      <span>
+                        🎲 {(user.sessionId || user.identifier || 'Anonymous').substring(0, 20)}
+                        {user.sessionId && user.sessionId.length > 20 ? '...' : ''}
+                        <span className="user-type-badge">Anonymous</span>
+                      </span>
+                    )}
+                  </div>
+                  {hasBadges && (
+                    <div className="achievement-badges">
+                      {user.isTopUpset && (
+                        <span 
+                          className="stat-badge badge-upset" 
+                          title={`Biggest upset: ${user.biggestUpset ? Math.round(user.biggestUpset) : 0} points`}
+                        >
+                          🔥 Biggest Upset
+                        </span>
+                      )}
+                      {user.isTopStreak && (
+                        <span 
+                          className="stat-badge badge-streak" 
+                          title={`Longest streak: ${user.longestStreak} correct predictions`}
+                        >
+                          ⚡ Longest Streak
+                        </span>
+                      )}
+                      {user.isTopAvgDiff && (
+                        <span 
+                          className="stat-badge badge-avg-diff" 
+                          title={`Highest average point differential: ${Math.round(user.avgPointDifferential)} points`}
+                        >
+                          📊 Highest Avg Differential
+                        </span>
+                      )}
+                      {user.isTopUpsetRate && (
+                        <span 
+                          className="stat-badge badge-upset-master" 
+                          title={`Upset pick rate: ${user.upsetPickRate}% (${user.upsetPicksCount} upsets picked)`}
+                        >
+                          🎯 Upset Master
+                        </span>
+                      )}
+                    </div>
                   )}
+                  <div className="user-stats">
+                    <span className="stat-badge">
+                      {user.comparisonsCount} comparisons
+                    </span>
+                    {user.lastActive && (
+                      <span className="last-active">
+                        Last active: {new Date(user.lastActive).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

@@ -15,84 +15,130 @@ const getRandomComparison = async (req, res) => {
     console.error('Error checking/fetching Wikipedia items:', err);
   });
   
+  // Helper function to get excluded item IDs from recent comparisons (cooldown)
+  // This is shared across all selection methods to prevent repetition
+  const getExcludedItemIds = async () => {
+    const dbType = db.getDbType();
+    const cooldownPeriod = await getCooldownPeriod();
+    
+    if (dbType === 'postgres') {
+      // Get items from the last N comparisons directly
+      // Use a subquery to get the last N comparison IDs, then get their items
+      const result = await db.query(`
+        SELECT DISTINCT item_id
+        FROM (
+          SELECT item1_id as item_id 
+          FROM comparisons 
+          WHERE id IN (SELECT id FROM comparisons ORDER BY created_at DESC LIMIT $1)
+          UNION
+          SELECT item2_id as item_id 
+          FROM comparisons 
+          WHERE id IN (SELECT id FROM comparisons ORDER BY created_at DESC LIMIT $1)
+        ) recent_items
+      `, [cooldownPeriod]);
+      return result.rows.map(row => row.item_id).filter(id => id !== null);
+    } else {
+      // SQLite version
+      return new Promise((resolve) => {
+        dbInstance.all(`
+          SELECT DISTINCT item_id
+          FROM (
+            SELECT item1_id as item_id 
+            FROM comparisons 
+            WHERE id IN (SELECT id FROM comparisons ORDER BY created_at DESC LIMIT ?)
+            UNION
+            SELECT item2_id as item_id 
+            FROM comparisons 
+            WHERE id IN (SELECT id FROM comparisons ORDER BY created_at DESC LIMIT ?)
+          )
+        `, [cooldownPeriod, cooldownPeriod], (err, recentItems) => {
+          if (err) {
+            console.error('Error fetching recent items for cooldown:', err);
+            resolve([]);
+          } else {
+            resolve((recentItems || []).map(row => row.item_id).filter(id => id !== null));
+          }
+        });
+      });
+    }
+  };
+  
+  // Helper function to build exclusion clause and params
+  const buildExclusionClause = (excludedIds, dbType) => {
+    if (!excludedIds || excludedIds.length === 0) {
+      return { clause: '', params: [] };
+    }
+    
+    if (dbType === 'postgres') {
+      const placeholders = excludedIds.map((_, i) => `$${i + 1}`).join(', ');
+      return {
+        clause: `AND i.id NOT IN (${placeholders})`,
+        params: excludedIds
+      };
+    } else {
+      const placeholders = excludedIds.map(() => '?').join(', ');
+      return {
+        clause: `AND i.id NOT IN (${placeholders})`,
+        params: excludedIds
+      };
+    }
+  };
+  
   // Helper function to fetch items by familiarity (50% of selections)
   // Uses familiarity_score for weighted selection
   // Excludes items from recent comparisons (cooldown period)
   const fetchByFamiliarity = async () => {
     const dbType = db.getDbType();
-    const cooldownPeriod = await getCooldownPeriod();
+    const excludedIds = await getExcludedItemIds();
+    const { clause: exclusionClause, params: exclusionParams } = buildExclusionClause(excludedIds, dbType);
     
     if (dbType === 'postgres') {
-      // First, get item IDs from recent comparisons to exclude
-      // Get items from the last N comparisons (each comparison has 2 items)
       return db.query(`
-        SELECT DISTINCT item_id
-        FROM (
-          SELECT item1_id as item_id FROM comparisons
-          WHERE id IN (SELECT id FROM comparisons ORDER BY created_at DESC LIMIT $1)
-          UNION
-          SELECT item2_id as item_id FROM comparisons
-          WHERE id IN (SELECT id FROM comparisons ORDER BY created_at DESC LIMIT $1)
-        ) recent_items
-      `, [cooldownPeriod]).then(recentItemsResult => {
-        const excludedIds = recentItemsResult.rows.map(row => row.item_id).filter(id => id !== null);
-        
-        // Build query with exclusion
-        let exclusionClause = '';
-        let queryParams = [];
-        
-        if (excludedIds.length > 0) {
-          exclusionClause = `AND i.id NOT IN (${excludedIds.map((_, i) => `$${i + 1}`).join(', ')})`;
-          queryParams = excludedIds;
+        SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
+               i.familiarity_score, i.rating_confidence,
+               c.id as category_id, c.name as category_name, c.slug as category_slug
+        FROM items i
+        LEFT JOIN categories c ON i.category_id = c.id
+        WHERE i.comparison_count >= 0 ${exclusionClause}
+        ORDER BY (COALESCE(i.familiarity_score, 0) + 1) * RANDOM() DESC
+        LIMIT 20
+      `, exclusionParams).then(result => {
+        // If cooldown excluded too many items, try without cooldown
+        if (result.rows.length < 2 && excludedIds.length > 0) {
+          console.log(`Cooldown excluded ${excludedIds.length} items, retrying without cooldown...`);
+          return db.query(`
+            SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
+                   i.familiarity_score, i.rating_confidence,
+                   c.id as category_id, c.name as category_name, c.slug as category_slug
+            FROM items i
+            LEFT JOIN categories c ON i.category_id = c.id
+            WHERE i.comparison_count >= 0
+            ORDER BY (COALESCE(i.familiarity_score, 0) + 1) * RANDOM() DESC
+            LIMIT 20
+          `).then(fallbackResult => {
+            if (fallbackResult.rows.length < 2) {
+              return res.status(404).json({ error: 'Not enough items in database' });
+            }
+            const shuffled = fallbackResult.rows.sort(() => Math.random() - 0.5);
+            let item1 = shuffled[0];
+            let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+            if (item1.id === item2.id && shuffled.length > 1) {
+              item2 = shuffled[1];
+            }
+            res.json({ item1, item2 });
+          });
         }
         
-        return db.query(`
-          SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
-                 i.familiarity_score, i.rating_confidence,
-                 c.id as category_id, c.name as category_name, c.slug as category_slug
-          FROM items i
-          LEFT JOIN categories c ON i.category_id = c.id
-          WHERE i.comparison_count >= 0 ${exclusionClause}
-          ORDER BY (COALESCE(i.familiarity_score, 0) + 1) * RANDOM() DESC
-          LIMIT 20
-        `, queryParams).then(result => {
-          // If cooldown excluded too many items, try without cooldown
-          if (result.rows.length < 2 && excludedIds.length > 0) {
-            console.log(`Cooldown excluded ${excludedIds.length} items, retrying without cooldown...`);
-            return db.query(`
-              SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
-                     i.familiarity_score, i.rating_confidence,
-                     c.id as category_id, c.name as category_name, c.slug as category_slug
-              FROM items i
-              LEFT JOIN categories c ON i.category_id = c.id
-              WHERE i.comparison_count >= 0
-              ORDER BY (COALESCE(i.familiarity_score, 0) + 1) * RANDOM() DESC
-              LIMIT 20
-            `).then(fallbackResult => {
-              if (fallbackResult.rows.length < 2) {
-                return res.status(404).json({ error: 'Not enough items in database' });
-              }
-              const shuffled = fallbackResult.rows.sort(() => Math.random() - 0.5);
-              let item1 = shuffled[0];
-              let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
-              if (item1.id === item2.id && shuffled.length > 1) {
-                item2 = shuffled[1];
-              }
-              res.json({ item1, item2 });
-            });
-          }
-          
-          if (result.rows.length < 2) {
-            return res.status(404).json({ error: 'Not enough items in database' });
-          }
-          const shuffled = result.rows.sort(() => Math.random() - 0.5);
-          let item1 = shuffled[0];
-          let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
-          if (item1.id === item2.id && shuffled.length > 1) {
-            item2 = shuffled[1];
-          }
-          res.json({ item1, item2 });
-        });
+        if (result.rows.length < 2) {
+          return res.status(404).json({ error: 'Not enough items in database' });
+        }
+        const shuffled = result.rows.sort(() => Math.random() - 0.5);
+        let item1 = shuffled[0];
+        let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+        if (item1.id === item2.id && shuffled.length > 1) {
+          item2 = shuffled[1];
+        }
+        res.json({ item1, item2 });
       }).catch(err => {
         // Fallback if familiarity_score column doesn't exist yet
         if (err.code === '42703' || err.message.includes('familiarity_score')) {
@@ -104,36 +150,7 @@ const getRandomComparison = async (req, res) => {
     }
     
     // SQLite version
-    // First, get item IDs from recent comparisons to exclude
-    // Get items from the last N comparisons (each comparison has 2 items)
-    dbInstance.all(`
-      SELECT DISTINCT item_id
-      FROM (
-        SELECT item1_id as item_id FROM comparisons
-        WHERE id IN (SELECT id FROM comparisons ORDER BY created_at DESC LIMIT ?)
-        UNION
-        SELECT item2_id as item_id FROM comparisons
-        WHERE id IN (SELECT id FROM comparisons ORDER BY created_at DESC LIMIT ?)
-      )
-    `, [cooldownPeriod, cooldownPeriod], (err, recentItems) => {
-      if (err) {
-        console.error('Error fetching recent items for cooldown:', err);
-        // Continue without cooldown if query fails
-        recentItems = [];
-      }
-      
-      const excludedIds = (recentItems || []).map(row => row.item_id).filter(id => id !== null);
-      
-      // Build query with exclusion
-      let exclusionClause = '';
-      let queryParams = [];
-      
-      if (excludedIds.length > 0) {
-        const placeholders = excludedIds.map(() => '?').join(', ');
-        exclusionClause = `AND i.id NOT IN (${placeholders})`;
-        queryParams = excludedIds;
-      }
-      
+    return new Promise((resolve, reject) => {
       dbInstance.all(`
         SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
                i.familiarity_score, i.rating_confidence,
@@ -143,7 +160,7 @@ const getRandomComparison = async (req, res) => {
         WHERE i.comparison_count >= 0 ${exclusionClause}
         ORDER BY (COALESCE(i.familiarity_score, 0) + 1) * (ABS(RANDOM()) % 1000000) DESC
         LIMIT 20
-      `, queryParams, (err, rows) => {
+      `, exclusionParams, (err, rows) => {
         if (err) {
           const errorStr = err.message || err.toString() || '';
           if (errorStr.includes('familiarity_score') || errorStr.includes('no such column')) {
@@ -340,23 +357,49 @@ const getRandomComparison = async (req, res) => {
   // 70% chance: familiarity-weighted selection (items with higher familiarity_score)
   // 15% chance: items needing more votes (low confidence, low comparison_count)
   // 15% chance: completely random (variety)
-  getSelectionThresholds().then(thresholds => {
+  getSelectionThresholds().then(async thresholds => {
     const selectionType = Math.random();
     
     // Helper to fetch items needing more comparisons (low confidence)
-    const fetchItemsNeedingVotes = () => {
-    const dbType = db.getDbType();
-    if (dbType === 'postgres') {
-      // Get items with low rating confidence, weighted by needing more data
-      return db.query(`
-        SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.rating_confidence,
-               c.id as category_id, c.name as category_name, c.slug as category_slug
-        FROM items i
-        LEFT JOIN categories c ON i.category_id = c.id
-        WHERE COALESCE(i.rating_confidence, 0) < 0.8 OR i.comparison_count < 20
-        ORDER BY (1.0 - COALESCE(i.rating_confidence, 0)) * (1.0 / (i.comparison_count + 1)) DESC, RANDOM()
-        LIMIT 20
-      `).then(result => {
+    const fetchItemsNeedingVotes = async () => {
+      const dbType = db.getDbType();
+      const excludedIds = await getExcludedItemIds();
+      const { clause: exclusionClause, params: exclusionParams } = buildExclusionClause(excludedIds, dbType);
+      
+      if (dbType === 'postgres') {
+        // Get items with low rating confidence, weighted by needing more data
+        return db.query(`
+          SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.rating_confidence,
+                 c.id as category_id, c.name as category_name, c.slug as category_slug
+          FROM items i
+          LEFT JOIN categories c ON i.category_id = c.id
+          WHERE (COALESCE(i.rating_confidence, 0) < 0.8 OR i.comparison_count < 20) ${exclusionClause}
+          ORDER BY (1.0 - COALESCE(i.rating_confidence, 0)) * (1.0 / (i.comparison_count + 1)) DESC, RANDOM()
+          LIMIT 20
+        `, exclusionParams).then(result => {
+          // If cooldown excluded too many items, try without cooldown
+          if (result.rows.length < 2 && excludedIds.length > 0) {
+            return db.query(`
+              SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.rating_confidence,
+                     c.id as category_id, c.name as category_name, c.slug as category_slug
+              FROM items i
+              LEFT JOIN categories c ON i.category_id = c.id
+              WHERE COALESCE(i.rating_confidence, 0) < 0.8 OR i.comparison_count < 20
+              ORDER BY (1.0 - COALESCE(i.rating_confidence, 0)) * (1.0 / (i.comparison_count + 1)) DESC, RANDOM()
+              LIMIT 20
+            `).then(fallbackResult => {
+              if (fallbackResult.rows.length >= 2) {
+                const shuffled = fallbackResult.rows.sort(() => Math.random() - 0.5);
+                let item1 = shuffled[0];
+                let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+                if (item1.id === item2.id && shuffled.length > 1) {
+                  item2 = shuffled[1];
+                }
+                return res.json({ item1, item2 });
+              }
+              return fetchFromAllItems();
+            });
+          }
         if (result.rows.length >= 2) {
           // Randomly pick 2 from the top candidates, ensuring they're different
           const shuffled = result.rows.sort(() => Math.random() - 0.5);
@@ -375,7 +418,7 @@ const getRandomComparison = async (req, res) => {
     }
     
     // SQLite version
-    Promise.all([
+    return Promise.all([
       settings.getItemsNeedingVotesConfidenceThreshold(),
       settings.getItemsNeedingVotesComparisonThreshold()
     ]).then(([confidenceThreshold, comparisonThreshold]) => {
@@ -385,12 +428,29 @@ const getRandomComparison = async (req, res) => {
                  c.id as category_id, c.name as category_name, c.slug as category_slug
           FROM items i
           LEFT JOIN categories c ON i.category_id = c.id
-          WHERE COALESCE(i.rating_confidence, 0) < ? OR i.comparison_count < ?
+          WHERE (COALESCE(i.rating_confidence, 0) < ? OR i.comparison_count < ?) ${exclusionClause}
           ORDER BY (1.0 - COALESCE(i.rating_confidence, 0)) * (1.0 / (i.comparison_count + 1)) DESC, RANDOM()
           LIMIT 20
-        `, [confidenceThreshold, comparisonThreshold], (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows);
+        `, [confidenceThreshold, comparisonThreshold, ...exclusionParams], (err, rows) => {
+          if (err) {
+            reject(err);
+          } else if (rows.length < 2 && excludedIds.length > 0) {
+            // Try without cooldown
+            dbInstance.all(`
+              SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.rating_confidence,
+                     c.id as category_id, c.name as category_name, c.slug as category_slug
+              FROM items i
+              LEFT JOIN categories c ON i.category_id = c.id
+              WHERE COALESCE(i.rating_confidence, 0) < ? OR i.comparison_count < ?
+              ORDER BY (1.0 - COALESCE(i.rating_confidence, 0)) * (1.0 / (i.comparison_count + 1)) DESC, RANDOM()
+              LIMIT 20
+            `, [confidenceThreshold, comparisonThreshold], (fallbackErr, fallbackRows) => {
+              if (fallbackErr) reject(fallbackErr);
+              else resolve(fallbackRows || []);
+            });
+          } else {
+            resolve(rows || []);
+          }
         });
       });
     }).then(rows => {
@@ -411,17 +471,43 @@ const getRandomComparison = async (req, res) => {
   };
   
   // Helper to fetch truly random items (pure variety)
-  const fetchRandomItems = () => {
+  const fetchRandomItems = async () => {
     const dbType = db.getDbType();
+    const excludedIds = await getExcludedItemIds();
+    const { clause: exclusionClause, params: exclusionParams } = buildExclusionClause(excludedIds, dbType);
+    
     if (dbType === 'postgres') {
       return db.query(`
         SELECT i.id, i.title, i.image_url, i.description, i.elo_rating,
                c.id as category_id, c.name as category_name, c.slug as category_slug
         FROM items i
         LEFT JOIN categories c ON i.category_id = c.id
+        WHERE 1=1 ${exclusionClause}
         ORDER BY RANDOM()
         LIMIT 20
-      `).then(result => {
+      `, exclusionParams).then(result => {
+        // If cooldown excluded too many items, try without cooldown
+        if (result.rows.length < 2 && excludedIds.length > 0) {
+          return db.query(`
+            SELECT i.id, i.title, i.image_url, i.description, i.elo_rating,
+                   c.id as category_id, c.name as category_name, c.slug as category_slug
+            FROM items i
+            LEFT JOIN categories c ON i.category_id = c.id
+            ORDER BY RANDOM()
+            LIMIT 20
+          `).then(fallbackResult => {
+            if (fallbackResult.rows.length >= 2) {
+              const shuffled = fallbackResult.rows.sort(() => Math.random() - 0.5);
+              let item1 = shuffled[0];
+              let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+              if (item1.id === item2.id && shuffled.length > 1) {
+                item2 = shuffled[1];
+              }
+              return res.json({ item1, item2 });
+            }
+            return fetchFromAllItems();
+          });
+        }
         if (result.rows.length >= 2) {
           const shuffled = result.rows.sort(() => Math.random() - 0.5);
           let item1 = shuffled[0];
@@ -437,14 +523,57 @@ const getRandomComparison = async (req, res) => {
     }
     
     // SQLite version
-    dbInstance.all(`
-      SELECT i.id, i.title, i.image_url, i.description, i.elo_rating,
-             c.id as category_id, c.name as category_name, c.slug as category_slug
-      FROM items i
-      LEFT JOIN categories c ON i.category_id = c.id
-      ORDER BY RANDOM()
-      LIMIT 20
-    `, (err, rows) => {
+    return new Promise((resolve, reject) => {
+      dbInstance.all(`
+        SELECT i.id, i.title, i.image_url, i.description, i.elo_rating,
+               c.id as category_id, c.name as category_name, c.slug as category_slug
+        FROM items i
+        LEFT JOIN categories c ON i.category_id = c.id
+        WHERE 1=1 ${exclusionClause}
+        ORDER BY RANDOM()
+        LIMIT 20
+      `, exclusionParams, (err, rows) => {
+        if (err) {
+          return fetchFromAllItems();
+        }
+        
+        // If cooldown excluded too many items, try without cooldown
+        if (rows.length < 2 && excludedIds.length > 0) {
+          dbInstance.all(`
+            SELECT i.id, i.title, i.image_url, i.description, i.elo_rating,
+                   c.id as category_id, c.name as category_name, c.slug as category_slug
+            FROM items i
+            LEFT JOIN categories c ON i.category_id = c.id
+            ORDER BY RANDOM()
+            LIMIT 20
+          `, (fallbackErr, fallbackRows) => {
+            if (fallbackErr || !fallbackRows || fallbackRows.length < 2) {
+              return fetchFromAllItems();
+            }
+            const shuffled = fallbackRows.sort(() => Math.random() - 0.5);
+            let item1 = shuffled[0];
+            let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+            if (item1.id === item2.id && shuffled.length > 1) {
+              item2 = shuffled[1];
+            }
+            res.json({ item1, item2 });
+          });
+          return;
+        }
+        
+        if (!rows || rows.length < 2) {
+          return fetchFromAllItems();
+        }
+        
+        const shuffled = rows.sort(() => Math.random() - 0.5);
+        let item1 = shuffled[0];
+        let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+        if (item1.id === item2.id && shuffled.length > 1) {
+          item2 = shuffled[1];
+        }
+        res.json({ item1, item2 });
+      });
+    });
       if (err || !rows || rows.length < 2) {
         return fetchFromAllItems();
       }
@@ -459,15 +588,20 @@ const getRandomComparison = async (req, res) => {
   };
   
     // Main selection logic: 50% familiarity, 50% variety (25% items needing votes, 25% random)
-    if (selectionType < thresholds.familiarityThreshold) {
-      // 50%: Familiarity-weighted selection
-      fetchByFamiliarity();
-    } else if (selectionType < thresholds.itemsNeedingVotesThreshold) {
-      // 25%: Items needing more votes (low confidence)
-      fetchItemsNeedingVotes();
-    } else {
-      // 25%: True random variety
-      fetchRandomItems();
+    try {
+      if (selectionType < thresholds.familiarityThreshold) {
+        // 50%: Familiarity-weighted selection
+        await fetchByFamiliarity();
+      } else if (selectionType < thresholds.itemsNeedingVotesThreshold) {
+        // 25%: Items needing more votes (low confidence)
+        await fetchItemsNeedingVotes();
+      } else {
+        // 25%: True random variety
+        await fetchRandomItems();
+      }
+    } catch (err) {
+      console.error('Error in selection logic:', err);
+      fetchFromAllItems();
     }
   }).catch(err => {
     console.error('Error getting selection thresholds:', err);

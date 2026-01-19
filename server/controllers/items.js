@@ -6,8 +6,9 @@ const getRankings = async (req, res) => {
     let limit = parseInt(req.query.limit) || 100;
     const offset = parseInt(req.query.offset) || 0;
     const categoryId = req.query.category_id ? parseInt(req.query.category_id) : null;
+    const sortOrder = req.query.sort === 'lowest' ? 'ASC' : 'DESC'; // Default to highest (DESC)
     
-    console.log(`[Rankings] Requested limit: ${req.query.limit}, parsed limit: ${limit}, offset: ${offset}, category: ${categoryId}`);
+    console.log(`[Rankings] Requested limit: ${req.query.limit}, parsed limit: ${limit}, offset: ${offset}, category: ${categoryId}, sort: ${sortOrder}`);
     
     // Cap at 10,000 to prevent performance issues, but allow "all" to work
     if (limit > 10000) {
@@ -26,12 +27,12 @@ const getRankings = async (req, res) => {
              FROM items i
              LEFT JOIN categories c ON i.category_id = c.id
              WHERE i.category_id = ?
-             ORDER BY i.elo_rating DESC`
+             ORDER BY i.elo_rating ${sortOrder}`
           : `SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count, i.wins, i.losses,
                     c.id as category_id, c.name as category_name, c.slug as category_slug
              FROM items i
              LEFT JOIN categories c ON i.category_id = c.id
-             ORDER BY i.elo_rating DESC`;
+             ORDER BY i.elo_rating ${sortOrder}`;
         
         rankings = await queryMany(sql, categoryParams);
         total = rankings.length;
@@ -47,10 +48,10 @@ const getRankings = async (req, res) => {
             ? `SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses
                FROM items
                WHERE category_id = ?
-               ORDER BY elo_rating DESC`
+               ORDER BY elo_rating ${sortOrder}`
             : `SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses
                FROM items
-               ORDER BY elo_rating DESC`;
+               ORDER BY elo_rating ${sortOrder}`;
           
           rankings = await queryMany(simpleSql, categoryParams);
           total = rankings.length;
@@ -75,13 +76,13 @@ const getRankings = async (req, res) => {
            FROM items i
            LEFT JOIN categories c ON i.category_id = c.id
            WHERE i.category_id = ?
-           ORDER BY i.elo_rating DESC
+           ORDER BY i.elo_rating ${sortOrder}
            LIMIT ? OFFSET ?`
         : `SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count, i.wins, i.losses,
                   c.id as category_id, c.name as category_name, c.slug as category_slug
            FROM items i
            LEFT JOIN categories c ON i.category_id = c.id
-           ORDER BY i.elo_rating DESC
+           ORDER BY i.elo_rating ${sortOrder}
            LIMIT ? OFFSET ?`;
       
       const params = categoryId ? [categoryId, limit, offset] : [limit, offset];
@@ -106,11 +107,11 @@ const getRankings = async (req, res) => {
           ? `SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses
              FROM items
              WHERE category_id = ?
-             ORDER BY elo_rating DESC
+             ORDER BY elo_rating ${sortOrder}
              LIMIT ? OFFSET ?`
           : `SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses
              FROM items
-             ORDER BY elo_rating DESC
+             ORDER BY elo_rating ${sortOrder}
              LIMIT ? OFFSET ?`;
         
         const simpleParams = categoryId ? [categoryId, limit, offset] : [limit, offset];
