@@ -340,11 +340,11 @@ const getRandomComparison = async (req, res) => {
   // 70% chance: familiarity-weighted selection (items with higher familiarity_score)
   // 15% chance: items needing more votes (low confidence, low comparison_count)
   // 15% chance: completely random (variety)
-  const thresholds = getSelectionThresholds();
-  const selectionType = Math.random();
-  
-  // Helper to fetch items needing more comparisons (low confidence)
-  const fetchItemsNeedingVotes = () => {
+  getSelectionThresholds().then(thresholds => {
+    const selectionType = Math.random();
+    
+    // Helper to fetch items needing more comparisons (low confidence)
+    const fetchItemsNeedingVotes = () => {
     const dbType = db.getDbType();
     if (dbType === 'postgres') {
       // Get items with low rating confidence, weighted by needing more data
@@ -375,28 +375,26 @@ const getRandomComparison = async (req, res) => {
     }
     
     // SQLite version
-    dbInstance.all(`
-      Promise.all([
-        settings.getItemsNeedingVotesConfidenceThreshold(),
-        settings.getItemsNeedingVotesComparisonThreshold()
-      ]).then(([confidenceThreshold, comparisonThreshold]) => {
-        return new Promise((resolve, reject) => {
-          dbInstance.all(`
-            SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.rating_confidence,
-                   c.id as category_id, c.name as category_name, c.slug as category_slug
-            FROM items i
-            LEFT JOIN categories c ON i.category_id = c.id
-            WHERE COALESCE(i.rating_confidence, 0) < ? OR i.comparison_count < ?
-            ORDER BY (1.0 - COALESCE(i.rating_confidence, 0)) * (1.0 / (i.comparison_count + 1)) DESC, RANDOM()
-            LIMIT 20
-          `, [confidenceThreshold, comparisonThreshold], (err, rows) => {
-            if (err) reject(err);
-            else resolve(rows);
-          });
+    Promise.all([
+      settings.getItemsNeedingVotesConfidenceThreshold(),
+      settings.getItemsNeedingVotesComparisonThreshold()
+    ]).then(([confidenceThreshold, comparisonThreshold]) => {
+      return new Promise((resolve, reject) => {
+        dbInstance.all(`
+          SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.rating_confidence,
+                 c.id as category_id, c.name as category_name, c.slug as category_slug
+          FROM items i
+          LEFT JOIN categories c ON i.category_id = c.id
+          WHERE COALESCE(i.rating_confidence, 0) < ? OR i.comparison_count < ?
+          ORDER BY (1.0 - COALESCE(i.rating_confidence, 0)) * (1.0 / (i.comparison_count + 1)) DESC, RANDOM()
+          LIMIT 20
+        `, [confidenceThreshold, comparisonThreshold], (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows);
         });
-      }).then(rows => {
-    `, (err, rows) => {
-      if (err || !rows || rows.length < 2) {
+      });
+    }).then(rows => {
+      if (!rows || rows.length < 2) {
         return fetchFromAllItems();
       }
       const shuffled = rows.sort(() => Math.random() - 0.5);
@@ -409,7 +407,7 @@ const getRandomComparison = async (req, res) => {
         item1,
         item2
       });
-    });
+    }).catch(() => fetchFromAllItems());
   };
   
   // Helper to fetch truly random items (pure variety)
@@ -460,17 +458,22 @@ const getRandomComparison = async (req, res) => {
     });
   };
   
-  // Main selection logic: 50% familiarity, 50% variety (25% items needing votes, 25% random)
-  if (selectionType < thresholds.familiarityThreshold) {
-    // 50%: Familiarity-weighted selection
-    fetchByFamiliarity();
-  } else if (selectionType < thresholds.itemsNeedingVotesThreshold) {
-    // 25%: Items needing more votes (low confidence)
-    fetchItemsNeedingVotes();
-  } else {
-    // 25%: True random variety
-    fetchRandomItems();
-  }
+    // Main selection logic: 50% familiarity, 50% variety (25% items needing votes, 25% random)
+    if (selectionType < thresholds.familiarityThreshold) {
+      // 50%: Familiarity-weighted selection
+      fetchByFamiliarity();
+    } else if (selectionType < thresholds.itemsNeedingVotesThreshold) {
+      // 25%: Items needing more votes (low confidence)
+      fetchItemsNeedingVotes();
+    } else {
+      // 25%: True random variety
+      fetchRandomItems();
+    }
+  }).catch(err => {
+    console.error('Error getting selection thresholds:', err);
+    // Fallback to random selection if settings fail
+    fetchFromAllItems();
+  });
 };
 
 /**
