@@ -574,17 +574,6 @@ const getRandomComparison = async (req, res) => {
         res.json({ item1, item2 });
       });
     });
-      if (err || !rows || rows.length < 2) {
-        return fetchFromAllItems();
-      }
-      const shuffled = rows.sort(() => Math.random() - 0.5);
-      let item1 = shuffled[0];
-      let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
-      if (item1.id === item2.id && shuffled.length > 1) {
-        item2 = shuffled[1];
-      }
-      res.json({ item1, item2 });
-    });
   };
   
     // Main selection logic: 50% familiarity, 50% variety (25% items needing votes, 25% random)
