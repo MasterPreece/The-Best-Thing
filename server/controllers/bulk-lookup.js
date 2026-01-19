@@ -231,11 +231,15 @@ async function processBulkLookup(data) {
         continue;
       }
       
-      // Insert into database
+      // Insert into database with higher initial familiarity score for manually uploaded items
+      // Set familiarity_score to 65 (out of 100) to make them show up more often
+      const initialFamiliarityScore = 65.0;
+      const now = new Date().toISOString();
+      
       if (dbType === 'postgres') {
         await db.query(
-          'INSERT INTO items (wikipedia_id, title, image_url, description, category_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING',
-          [pageInfo.wikipediaId, pageInfo.title, pageInfo.imageUrl, pageInfo.description, categoryId]
+          'INSERT INTO items (wikipedia_id, title, image_url, description, category_id, familiarity_score, first_seen_at, last_compared_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING',
+          [pageInfo.wikipediaId, pageInfo.title, pageInfo.imageUrl, pageInfo.description, categoryId, initialFamiliarityScore, now, now]
         );
         
         // Check if insert succeeded
@@ -243,44 +247,79 @@ async function processBulkLookup(data) {
         if (checkResult.rows.length > 0) {
           inserted++;
           const imageStatus = pageInfo.hasImage ? '📷' : '❌';
-          console.log(`[Bulk Lookup] ${imageStatus} [${i + 1}/${data.length}] Added: ${pageInfo.title}`);
+          console.log(`[Bulk Lookup] ${imageStatus} [${i + 1}/${data.length}] Added: ${pageInfo.title} (familiarity: ${initialFamiliarityScore})`);
         } else {
           skipped++;
         }
       } else {
-        // SQLite: Try with category_id first, fall back to without it if column doesn't exist
+        // SQLite: Try with category_id and familiarity_score first, fall back if columns don't exist
         await new Promise((resolve) => {
-          // Try with category_id first
+          // Try with all columns first (category_id, familiarity_score, first_seen_at, last_compared_at)
+          const now = new Date().toISOString();
+          const initialFamiliarityScore = 65.0;
+          
           dbInstance.run(
-            'INSERT OR IGNORE INTO items (wikipedia_id, title, image_url, description, category_id) VALUES (?, ?, ?, ?, ?)',
-            [pageInfo.wikipediaId, pageInfo.title, pageInfo.imageUrl, pageInfo.description, categoryId],
+            'INSERT OR IGNORE INTO items (wikipedia_id, title, image_url, description, category_id, familiarity_score, first_seen_at, last_compared_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [pageInfo.wikipediaId, pageInfo.title, pageInfo.imageUrl, pageInfo.description, categoryId, initialFamiliarityScore, now, now],
             function(err) {
               if (err) {
                 const errorStr = err.message || err.toString() || '';
-                // If category_id column doesn't exist, try without it
+                // If category_id column doesn't exist, try without it but with familiarity
                 if (errorStr.includes('no such column') && errorStr.includes('category_id')) {
                   console.log(`[Bulk Lookup] Category column not available, inserting without category`);
-                  // Retry without category_id
+                  // Retry without category_id but with familiarity_score
                   dbInstance.run(
-                    'INSERT OR IGNORE INTO items (wikipedia_id, title, image_url, description) VALUES (?, ?, ?, ?)',
-                    [pageInfo.wikipediaId, pageInfo.title, pageInfo.imageUrl, pageInfo.description],
+                    'INSERT OR IGNORE INTO items (wikipedia_id, title, image_url, description, familiarity_score, first_seen_at, last_compared_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    [pageInfo.wikipediaId, pageInfo.title, pageInfo.imageUrl, pageInfo.description, initialFamiliarityScore, now, now],
                     function(retryErr) {
                       if (retryErr) {
-                        console.error(`[Bulk Lookup] Error inserting ${pageInfo.title}:`, retryErr);
-                        failed++;
-                        errors.push({
-                          row: rowNum,
-                          error: `Database error: ${retryErr.message}`,
-                          data: row
-                        });
+                        const retryErrorStr = retryErr.message || retryErr.toString() || '';
+                        // If familiarity_score columns don't exist, try without them
+                        if (retryErrorStr.includes('no such column') && (retryErrorStr.includes('familiarity_score') || retryErrorStr.includes('first_seen_at') || retryErrorStr.includes('last_compared_at'))) {
+                          console.log(`[Bulk Lookup] Familiarity columns not available, inserting without them`);
+                          // Final fallback: just basic columns
+                          dbInstance.run(
+                            'INSERT OR IGNORE INTO items (wikipedia_id, title, image_url, description) VALUES (?, ?, ?, ?)',
+                            [pageInfo.wikipediaId, pageInfo.title, pageInfo.imageUrl, pageInfo.description],
+                            function(finalErr) {
+                              if (finalErr) {
+                                console.error(`[Bulk Lookup] Error inserting ${pageInfo.title}:`, finalErr);
+                                failed++;
+                                errors.push({
+                                  row: rowNum,
+                                  error: `Database error: ${finalErr.message}`,
+                                  data: row
+                                });
+                              } else if (this.changes > 0) {
+                                inserted++;
+                                const imageStatus = pageInfo.hasImage ? '📷' : '❌';
+                                console.log(`[Bulk Lookup] ${imageStatus} [${i + 1}/${data.length}] Added: ${pageInfo.title}`);
+                              } else {
+                                skipped++;
+                              }
+                              resolve();
+                            }
+                          );
+                        } else {
+                          // Other error
+                          console.error(`[Bulk Lookup] Error inserting ${pageInfo.title}:`, retryErr);
+                          failed++;
+                          errors.push({
+                            row: rowNum,
+                            error: `Database error: ${retryErr.message}`,
+                            data: row
+                          });
+                          resolve();
+                        }
                       } else if (this.changes > 0) {
                         inserted++;
                         const imageStatus = pageInfo.hasImage ? '📷' : '❌';
-                        console.log(`[Bulk Lookup] ${imageStatus} [${i + 1}/${data.length}] Added: ${pageInfo.title}`);
+                        console.log(`[Bulk Lookup] ${imageStatus} [${i + 1}/${data.length}] Added: ${pageInfo.title} (familiarity: ${initialFamiliarityScore})`);
+                        resolve();
                       } else {
                         skipped++;
+                        resolve();
                       }
-                      resolve();
                     }
                   );
                 } else {
@@ -297,7 +336,7 @@ async function processBulkLookup(data) {
               } else if (this.changes > 0) {
                 inserted++;
                 const imageStatus = pageInfo.hasImage ? '📷' : '❌';
-                console.log(`[Bulk Lookup] ${imageStatus} [${i + 1}/${data.length}] Added: ${pageInfo.title}`);
+                console.log(`[Bulk Lookup] ${imageStatus} [${i + 1}/${data.length}] Added: ${pageInfo.title} (familiarity: ${initialFamiliarityScore})`);
                 resolve();
               } else {
                 skipped++;
