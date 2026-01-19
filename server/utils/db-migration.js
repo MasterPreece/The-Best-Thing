@@ -937,6 +937,74 @@ const runMigrations = async () => {
   }
 };
 
+  // Migration: Create settings table if it doesn't exist
+  try {
+    if (dbType === 'postgres') {
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS settings (
+          id SERIAL PRIMARY KEY,
+          key VARCHAR(100) NOT NULL UNIQUE,
+          value TEXT NOT NULL,
+          description TEXT,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      
+      // Initialize default settings if they don't exist
+      await db.query(`
+        INSERT INTO settings (key, value, description)
+        VALUES 
+          ('familiarity_weight', '0.5', 'Familiarity weight for item selection (0.0-1.0)'),
+          ('cooldown_period', '30', 'Number of recent comparisons to exclude from familiarity selection')
+        ON CONFLICT (key) DO NOTHING
+      `);
+      console.log('✓ Settings table migration completed');
+    } else {
+      await new Promise((resolve, reject) => {
+        dbInstance.get(`SELECT name FROM sqlite_master WHERE type='table' AND name='settings'`, (err, table) => {
+          if (err) {
+            console.error('Error checking settings table:', err);
+            return reject(err);
+          }
+          
+          if (!table) {
+            dbInstance.run(`CREATE TABLE IF NOT EXISTS settings (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              key TEXT NOT NULL UNIQUE,
+              value TEXT NOT NULL,
+              description TEXT,
+              updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`, (err) => {
+              if (err) {
+                console.error('Error creating settings table:', err);
+                return reject(err);
+              }
+              
+              // Initialize default settings if they don't exist
+              dbInstance.run(`INSERT OR IGNORE INTO settings (key, value, description)
+                VALUES 
+                  ('familiarity_weight', '0.5', 'Familiarity weight for item selection (0.0-1.0)'),
+                  ('cooldown_period', '30', 'Number of recent comparisons to exclude from familiarity selection')`, (err2) => {
+                if (err2) {
+                  console.error('Error initializing settings:', err2);
+                  return reject(err2);
+                }
+                console.log('✓ Settings table migration completed');
+                resolve();
+              });
+            });
+          } else {
+            resolve();
+          }
+        });
+      });
+    }
+  } catch (err) {
+    if (err.code !== '42P07' && !err.message.includes('already exists') && !err.message.includes('duplicate')) {
+      console.error('Error in settings table migration:', err);
+    }
+  }
+
 module.exports = {
   runMigrations
 };

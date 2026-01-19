@@ -526,6 +526,148 @@ const triggerSeedPopularCulture = async (req, res) => {
   }
 };
 
+/**
+ * Get application settings
+ * GET /api/admin/settings
+ */
+const getSettings = async (req, res) => {
+  try {
+    const dbType = db.getDbType();
+    const dbInstance = db.getDb();
+    
+    if (dbType === 'postgres') {
+      const result = await db.query(`
+        SELECT key, value, description, updated_at
+        FROM settings
+        ORDER BY key
+      `);
+      
+      const settings = {};
+      result.rows.forEach(row => {
+        settings[row.key] = {
+          value: row.key === 'familiarity_weight' ? parseFloat(row.value) : parseInt(row.value),
+          description: row.description,
+          updated_at: row.updated_at
+        };
+      });
+      
+      res.json({ settings });
+    } else {
+      dbInstance.all(`
+        SELECT key, value, description, updated_at
+        FROM settings
+        ORDER BY key
+      `, [], (err, rows) => {
+        if (err) {
+          console.error('Error fetching settings:', err);
+          return res.status(500).json({ error: 'Failed to fetch settings' });
+        }
+        
+        const settings = {};
+        rows.forEach(row => {
+          settings[row.key] = {
+            value: row.key === 'familiarity_weight' ? parseFloat(row.value) : parseInt(row.value),
+            description: row.description,
+            updated_at: row.updated_at
+          };
+        });
+        
+        res.json({ settings });
+      });
+    }
+  } catch (error) {
+    console.error('Error in getSettings:', error);
+    res.status(500).json({ error: 'Failed to fetch settings' });
+  }
+};
+
+/**
+ * Update application settings
+ * PUT /api/admin/settings
+ * Body: { familiarity_weight?: number, cooldown_period?: number }
+ */
+const updateSettings = async (req, res) => {
+  try {
+    const { familiarity_weight, cooldown_period } = req.body;
+    const dbType = db.getDbType();
+    const dbInstance = db.getDb();
+    
+    const updates = [];
+    
+    if (familiarity_weight !== undefined) {
+      const weight = parseFloat(familiarity_weight);
+      if (isNaN(weight) || weight < 0 || weight > 1) {
+        return res.status(400).json({ error: 'familiarity_weight must be between 0 and 1' });
+      }
+      updates.push({ key: 'familiarity_weight', value: weight.toString() });
+    }
+    
+    if (cooldown_period !== undefined) {
+      const period = parseInt(cooldown_period);
+      if (isNaN(period) || period < 0) {
+        return res.status(400).json({ error: 'cooldown_period must be a non-negative integer' });
+      }
+      updates.push({ key: 'cooldown_period', value: period.toString() });
+    }
+    
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No valid settings to update' });
+    }
+    
+    if (dbType === 'postgres') {
+      for (const update of updates) {
+        await db.query(`
+          UPDATE settings 
+          SET value = $1, updated_at = CURRENT_TIMESTAMP
+          WHERE key = $2
+        `, [update.value, update.key]);
+      }
+      
+      // Invalidate cache
+      const { invalidateSettingsCache } = require('../utils/selection-config');
+      invalidateSettingsCache();
+      
+      res.json({ 
+        success: true, 
+        message: 'Settings updated successfully',
+        updated: updates.map(u => u.key)
+      });
+    } else {
+      let completed = 0;
+      const total = updates.length;
+      
+      updates.forEach(update => {
+        dbInstance.run(`
+          UPDATE settings 
+          SET value = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE key = ?
+        `, [update.value, update.key], (err) => {
+          if (err) {
+            console.error(`Error updating setting ${update.key}:`, err);
+            return res.status(500).json({ error: `Failed to update ${update.key}` });
+          }
+          
+          completed++;
+          if (completed === total) {
+            // Invalidate cache
+            const { invalidateSettingsCache } = require('../utils/selection-config');
+            invalidateSettingsCache();
+            
+            res.json({ 
+              success: true, 
+              message: 'Settings updated successfully',
+              updated: updates.map(u => u.key)
+            });
+          }
+        });
+      });
+    }
+  } catch (error) {
+    console.error('Error in updateSettings:', error);
+    res.status(500).json({ error: 'Failed to update settings' });
+  }
+};
+
 module.exports = {
   triggerSeedCategories,
   triggerSeedTop2000,
@@ -536,6 +678,8 @@ module.exports = {
   createItem,
   updateItem,
   deleteItem,
-  getAdminStats
+  getAdminStats,
+  getSettings,
+  updateSettings
 };
 

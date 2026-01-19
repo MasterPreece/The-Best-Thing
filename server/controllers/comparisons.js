@@ -1,12 +1,12 @@
 const db = require('../database');
 const { updateEloRatings } = require('../utils/elo');
 const wikipediaFetcher = require('../services/wikipedia-fetcher');
-const { getSelectionThresholds } = require('../utils/selection-config');
+const { getSelectionThresholds, getCooldownPeriod } = require('../utils/selection-config');
 const { updateFamiliarityMetrics } = require('../utils/familiarity-calculator');
 const { updateItemMetricsAfterVote } = require('../utils/item-metrics-updater');
 const { updateUserStatsInDatabase } = require('../utils/user-stats-calculator');
 
-const getRandomComparison = (req, res) => {
+const getRandomComparison = async (req, res) => {
   const dbInstance = db.getDb();
   
   // Check if we need to fetch more items (do this in background, don't block)
@@ -14,31 +14,84 @@ const getRandomComparison = (req, res) => {
     console.error('Error checking/fetching Wikipedia items:', err);
   });
   
-  // Helper function to fetch items by familiarity (70% of selections)
+  // Helper function to fetch items by familiarity (50% of selections)
   // Uses familiarity_score for weighted selection
-  const fetchByFamiliarity = () => {
+  // Excludes items from recent comparisons (cooldown period)
+  const fetchByFamiliarity = async () => {
     const dbType = db.getDbType();
+    const cooldownPeriod = await getCooldownPeriod();
+    
     if (dbType === 'postgres') {
+      // First, get item IDs from recent comparisons to exclude
+      // Get items from the last N comparisons (each comparison has 2 items)
       return db.query(`
-        SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
-               i.familiarity_score, i.rating_confidence,
-               c.id as category_id, c.name as category_name, c.slug as category_slug
-        FROM items i
-        LEFT JOIN categories c ON i.category_id = c.id
-        WHERE i.comparison_count >= 0
-        ORDER BY (i.familiarity_score + 1) * RANDOM() DESC
-        LIMIT 20
-      `).then(result => {
-        if (result.rows.length < 2) {
-          return res.status(404).json({ error: 'Not enough items in database' });
+        SELECT DISTINCT item_id
+        FROM (
+          SELECT item1_id as item_id FROM comparisons
+          WHERE id IN (SELECT id FROM comparisons ORDER BY created_at DESC LIMIT $1)
+          UNION
+          SELECT item2_id as item_id FROM comparisons
+          WHERE id IN (SELECT id FROM comparisons ORDER BY created_at DESC LIMIT $1)
+        ) recent_items
+      `, [cooldownPeriod]).then(recentItemsResult => {
+        const excludedIds = recentItemsResult.rows.map(row => row.item_id).filter(id => id !== null);
+        
+        // Build query with exclusion
+        let exclusionClause = '';
+        let queryParams = [];
+        
+        if (excludedIds.length > 0) {
+          exclusionClause = `AND i.id NOT IN (${excludedIds.map((_, i) => `$${i + 1}`).join(', ')})`;
+          queryParams = excludedIds;
         }
-        const shuffled = result.rows.sort(() => Math.random() - 0.5);
-        let item1 = shuffled[0];
-        let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
-        if (item1.id === item2.id && shuffled.length > 1) {
-          item2 = shuffled[1];
-        }
-        res.json({ item1, item2 });
+        
+        return db.query(`
+          SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
+                 i.familiarity_score, i.rating_confidence,
+                 c.id as category_id, c.name as category_name, c.slug as category_slug
+          FROM items i
+          LEFT JOIN categories c ON i.category_id = c.id
+          WHERE i.comparison_count >= 0 ${exclusionClause}
+          ORDER BY (COALESCE(i.familiarity_score, 0) + 1) * RANDOM() DESC
+          LIMIT 20
+        `, queryParams).then(result => {
+          // If cooldown excluded too many items, try without cooldown
+          if (result.rows.length < 2 && excludedIds.length > 0) {
+            console.log(`Cooldown excluded ${excludedIds.length} items, retrying without cooldown...`);
+            return db.query(`
+              SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
+                     i.familiarity_score, i.rating_confidence,
+                     c.id as category_id, c.name as category_name, c.slug as category_slug
+              FROM items i
+              LEFT JOIN categories c ON i.category_id = c.id
+              WHERE i.comparison_count >= 0
+              ORDER BY (COALESCE(i.familiarity_score, 0) + 1) * RANDOM() DESC
+              LIMIT 20
+            `).then(fallbackResult => {
+              if (fallbackResult.rows.length < 2) {
+                return res.status(404).json({ error: 'Not enough items in database' });
+              }
+              const shuffled = fallbackResult.rows.sort(() => Math.random() - 0.5);
+              let item1 = shuffled[0];
+              let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+              if (item1.id === item2.id && shuffled.length > 1) {
+                item2 = shuffled[1];
+              }
+              res.json({ item1, item2 });
+            });
+          }
+          
+          if (result.rows.length < 2) {
+            return res.status(404).json({ error: 'Not enough items in database' });
+          }
+          const shuffled = result.rows.sort(() => Math.random() - 0.5);
+          let item1 = shuffled[0];
+          let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+          if (item1.id === item2.id && shuffled.length > 1) {
+            item2 = shuffled[1];
+          }
+          res.json({ item1, item2 });
+        });
       }).catch(err => {
         // Fallback if familiarity_score column doesn't exist yet
         if (err.code === '42703' || err.message.includes('familiarity_score')) {
@@ -50,36 +103,99 @@ const getRandomComparison = (req, res) => {
     }
     
     // SQLite version
+    // First, get item IDs from recent comparisons to exclude
+    // Get items from the last N comparisons (each comparison has 2 items)
     dbInstance.all(`
-      SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
-             i.familiarity_score, i.rating_confidence,
-             c.id as category_id, c.name as category_name, c.slug as category_slug
-      FROM items i
-      LEFT JOIN categories c ON i.category_id = c.id
-      WHERE i.comparison_count >= 0
-      ORDER BY (COALESCE(i.familiarity_score, 0) + 1) * (ABS(RANDOM()) % 1000000) DESC
-      LIMIT 20
-    `, (err, rows) => {
+      SELECT DISTINCT item_id
+      FROM (
+        SELECT item1_id as item_id FROM comparisons
+        WHERE id IN (SELECT id FROM comparisons ORDER BY created_at DESC LIMIT ?)
+        UNION
+        SELECT item2_id as item_id FROM comparisons
+        WHERE id IN (SELECT id FROM comparisons ORDER BY created_at DESC LIMIT ?)
+      )
+    `, [cooldownPeriod, cooldownPeriod], (err, recentItems) => {
       if (err) {
-        const errorStr = err.message || err.toString() || '';
-        if (errorStr.includes('familiarity_score') || errorStr.includes('no such column')) {
+        console.error('Error fetching recent items for cooldown:', err);
+        // Continue without cooldown if query fails
+        recentItems = [];
+      }
+      
+      const excludedIds = (recentItems || []).map(row => row.item_id).filter(id => id !== null);
+      
+      // Build query with exclusion
+      let exclusionClause = '';
+      let queryParams = [];
+      
+      if (excludedIds.length > 0) {
+        const placeholders = excludedIds.map(() => '?').join(', ');
+        exclusionClause = `AND i.id NOT IN (${placeholders})`;
+        queryParams = excludedIds;
+      }
+      
+      dbInstance.all(`
+        SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
+               i.familiarity_score, i.rating_confidence,
+               c.id as category_id, c.name as category_name, c.slug as category_slug
+        FROM items i
+        LEFT JOIN categories c ON i.category_id = c.id
+        WHERE i.comparison_count >= 0 ${exclusionClause}
+        ORDER BY (COALESCE(i.familiarity_score, 0) + 1) * (ABS(RANDOM()) % 1000000) DESC
+        LIMIT 20
+      `, queryParams, (err, rows) => {
+        if (err) {
+          const errorStr = err.message || err.toString() || '';
+          if (errorStr.includes('familiarity_score') || errorStr.includes('no such column')) {
+            return fetchFromAllItems();
+          }
+          console.error('Error fetching by familiarity:', err);
           return fetchFromAllItems();
         }
-        console.error('Error fetching by familiarity:', err);
-        return fetchFromAllItems();
-      }
-      
-      if (rows.length < 2) {
-        return res.status(404).json({ error: 'Not enough items in database' });
-      }
-      
-      const shuffled = rows.sort(() => Math.random() - 0.5);
-      let item1 = shuffled[0];
-      let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
-      if (item1.id === item2.id && shuffled.length > 1) {
-        item2 = shuffled[1];
-      }
-      res.json({ item1, item2 });
+        
+        // If cooldown excluded too many items, try without cooldown
+        if (rows.length < 2 && excludedIds.length > 0) {
+          console.log(`Cooldown excluded ${excludedIds.length} items, retrying without cooldown...`);
+          dbInstance.all(`
+            SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
+                   i.familiarity_score, i.rating_confidence,
+                   c.id as category_id, c.name as category_name, c.slug as category_slug
+            FROM items i
+            LEFT JOIN categories c ON i.category_id = c.id
+            WHERE i.comparison_count >= 0
+            ORDER BY (COALESCE(i.familiarity_score, 0) + 1) * (ABS(RANDOM()) % 1000000) DESC
+            LIMIT 20
+          `, (fallbackErr, fallbackRows) => {
+            if (fallbackErr) {
+              return fetchFromAllItems();
+            }
+            
+            if (fallbackRows.length < 2) {
+              return res.status(404).json({ error: 'Not enough items in database' });
+            }
+            
+            const shuffled = fallbackRows.sort(() => Math.random() - 0.5);
+            let item1 = shuffled[0];
+            let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+            if (item1.id === item2.id && shuffled.length > 1) {
+              item2 = shuffled[1];
+            }
+            res.json({ item1, item2 });
+          });
+          return;
+        }
+        
+        if (rows.length < 2) {
+          return res.status(404).json({ error: 'Not enough items in database' });
+        }
+        
+        const shuffled = rows.sort(() => Math.random() - 0.5);
+        let item1 = shuffled[0];
+        let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+        if (item1.id === item2.id && shuffled.length > 1) {
+          item2 = shuffled[1];
+        }
+        res.json({ item1, item2 });
+      });
     });
   };
   
@@ -331,15 +447,15 @@ const getRandomComparison = (req, res) => {
     });
   };
   
-  // Main selection logic: 70% familiarity, 30% variety (15% items needing votes, 15% random)
+  // Main selection logic: 50% familiarity, 50% variety (25% items needing votes, 25% random)
   if (selectionType < thresholds.familiarityThreshold) {
-    // 70%: Familiarity-weighted selection
+    // 50%: Familiarity-weighted selection
     fetchByFamiliarity();
   } else if (selectionType < thresholds.itemsNeedingVotesThreshold) {
-    // 15%: Items needing more votes (low confidence)
+    // 25%: Items needing more votes (low confidence)
     fetchItemsNeedingVotes();
   } else {
-    // 15%: True random variety
+    // 25%: True random variety
     fetchRandomItems();
   }
 };

@@ -266,6 +266,26 @@ const createTables = async () => {
       await client.query(`
         CREATE INDEX IF NOT EXISTS idx_collections_comparison_id ON collections(comparison_id)
       `);
+
+      // Settings table - for storing application configuration
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS settings (
+          id SERIAL PRIMARY KEY,
+          key VARCHAR(100) NOT NULL UNIQUE,
+          value TEXT NOT NULL,
+          description TEXT,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      // Initialize default settings if they don't exist
+      await client.query(`
+        INSERT INTO settings (key, value, description)
+        VALUES 
+          ('familiarity_weight', '0.5', 'Familiarity weight for item selection (0.0-1.0)'),
+          ('cooldown_period', '30', 'Number of recent comparisons to exclude from familiarity selection')
+        ON CONFLICT (key) DO NOTHING
+      `);
       
       console.log('PostgreSQL tables created successfully');
     } finally {

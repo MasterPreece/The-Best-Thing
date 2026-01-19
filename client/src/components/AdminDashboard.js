@@ -27,6 +27,9 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
   const [showAssignCategoriesModal, setShowAssignCategoriesModal] = useState(false);
   const [showPhotoSubmissions, setShowPhotoSubmissions] = useState(false);
   const [showItemSubmissions, setShowItemSubmissions] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settings, setSettings] = useState(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [error, setError] = useState('');
 
@@ -80,10 +83,26 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
     }
   }, [api, onLogout]);
 
+  const fetchSettings = useCallback(async () => {
+    setSettingsLoading(true);
+    try {
+      const response = await api.get('/api/admin/settings');
+      setSettings(response.data.settings || {});
+    } catch (err) {
+      console.error('Error fetching settings:', err);
+      if (err.response?.status === 401) {
+        onLogout();
+      }
+    } finally {
+      setSettingsLoading(false);
+    }
+  }, [api, onLogout]);
+
   useEffect(() => {
     fetchItems();
     fetchStats();
-  }, [fetchItems, fetchStats]);
+    fetchSettings();
+  }, [fetchItems, fetchStats, fetchSettings]);
 
   const handleSearch = (e) => {
     setSearch(e.target.value);
@@ -226,6 +245,15 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
             <div className="tool-content">
               <h4 className="tool-title">Item Submissions</h4>
               <p className="tool-description">Review and approve new items submitted by users for inclusion.</p>
+            </div>
+          </div>
+
+          {/* Settings */}
+          <div className="admin-tool-card" onClick={() => setShowSettings(true)} style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}>
+            <div className="tool-icon">⚙️</div>
+            <div className="tool-content">
+              <h4 className="tool-title">Settings</h4>
+              <p className="tool-description">Adjust familiarity weight and cooldown period for item selection algorithm.</p>
             </div>
           </div>
         </div>
@@ -481,6 +509,16 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
             fetchItems();
             fetchStats();
           }}
+          api={api}
+        />
+      )}
+
+      {showSettings && (
+        <SettingsPanel
+          onClose={() => setShowSettings(false)}
+          settings={settings}
+          settingsLoading={settingsLoading}
+          onUpdate={fetchSettings}
           api={api}
         />
       )}
@@ -1103,6 +1141,158 @@ const ItemSubmissionsPanel = ({ onClose, onApprove, api }) => {
               </div>
             )}
           </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Settings Panel
+const SettingsPanel = ({ onClose, settings, settingsLoading, onUpdate, api }) => {
+  const [familiarityWeight, setFamiliarityWeight] = useState(0.5);
+  const [cooldownPeriod, setCooldownPeriod] = useState(30);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  useEffect(() => {
+    if (settings) {
+      setFamiliarityWeight(settings.familiarity_weight?.value ?? 0.5);
+      setCooldownPeriod(settings.cooldown_period?.value ?? 30);
+    }
+  }, [settings]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api.put('/api/admin/settings', {
+        familiarity_weight: familiarityWeight,
+        cooldown_period: cooldownPeriod
+      });
+      setMessage({ type: 'success', text: 'Settings saved successfully!' });
+      onUpdate();
+      setTimeout(() => {
+        setMessage(null);
+      }, 3000);
+    } catch (err) {
+      console.error('Error saving settings:', err);
+      setMessage({ 
+        type: 'error', 
+        text: err.response?.data?.error || 'Failed to save settings' 
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const varietyWeight = 1 - familiarityWeight;
+  const itemsNeedingVotesPercent = (varietyWeight * 0.5 * 100).toFixed(1);
+  const randomPercent = (varietyWeight * 0.5 * 100).toFixed(1);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content settings-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>⚙️ Selection Algorithm Settings</h2>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+
+        {settingsLoading ? (
+          <div className="loading">Loading settings...</div>
+        ) : (
+          <div className="settings-content">
+            {message && (
+              <div className={`settings-message ${message.type}`}>
+                {message.text}
+              </div>
+            )}
+
+            <div className="setting-group">
+              <label className="setting-label">
+                <span className="setting-name">Familiarity Weight</span>
+                <span className="setting-description">
+                  Percentage of selections that use familiarity-based selection (0.0 - 1.0)
+                </span>
+              </label>
+              <div className="setting-control">
+                <input
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={familiarityWeight}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    if (!isNaN(val) && val >= 0 && val <= 1) {
+                      setFamiliarityWeight(val);
+                    }
+                  }}
+                  className="setting-input"
+                />
+                <div className="setting-preview">
+                  <div className="preview-breakdown">
+                    <div className="preview-item">
+                      <span className="preview-label">Familiarity:</span>
+                      <span className="preview-value">{(familiarityWeight * 100).toFixed(1)}%</span>
+                    </div>
+                    <div className="preview-item">
+                      <span className="preview-label">Items Needing Votes:</span>
+                      <span className="preview-value">{itemsNeedingVotesPercent}%</span>
+                    </div>
+                    <div className="preview-item">
+                      <span className="preview-label">Random:</span>
+                      <span className="preview-value">{randomPercent}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="setting-group">
+              <label className="setting-label">
+                <span className="setting-name">Cooldown Period</span>
+                <span className="setting-description">
+                  Number of recent comparisons to exclude from familiarity-based selection (prevents repetition)
+                </span>
+              </label>
+              <div className="setting-control">
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={cooldownPeriod}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    if (!isNaN(val) && val >= 0) {
+                      setCooldownPeriod(val);
+                    }
+                  }}
+                  className="setting-input"
+                />
+                <div className="setting-preview">
+                  <p className="preview-text">
+                    Items from the last <strong>{cooldownPeriod}</strong> comparisons will be excluded from familiarity-based selection.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="settings-actions">
+              <button 
+                className="save-button" 
+                onClick={handleSave}
+                disabled={saving}
+              >
+                {saving ? 'Saving...' : 'Save Settings'}
+              </button>
+              <button 
+                className="cancel-button" 
+                onClick={onClose}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

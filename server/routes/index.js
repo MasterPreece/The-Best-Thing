@@ -101,6 +101,8 @@ router.post('/admin/items', adminAuth, adminController.createItem);
 router.put('/admin/items/:id', adminAuth, adminController.updateItem);
 router.delete('/admin/items/:id', adminAuth, adminController.deleteItem);
 router.get('/admin/stats', adminAuth, adminController.getAdminStats);
+router.get('/admin/settings', adminAuth, adminController.getSettings);
+router.put('/admin/settings', adminAuth, adminController.updateSettings);
 router.post('/admin/bulk-lookup', adminAuth, upload.single('file'), bulkLookupController.bulkLookup);
 router.post('/admin/llm-query', adminAuth, llmQueryController.generateItemList);
 
