@@ -123,6 +123,20 @@ const createTables = async () => {
         CREATE UNIQUE INDEX IF NOT EXISTS idx_items_title ON items(title)
       `);
       
+      // Try to create category_id index - column might not exist yet (handled by migrations)
+      try {
+        await client.query(`
+          CREATE INDEX IF NOT EXISTS idx_items_category_id ON items(category_id)
+        `);
+      } catch (err) {
+        // Column doesn't exist yet - will be created by migrations
+        // PostgreSQL error code 42703 = undefined_column
+        const errMsg = err.message || err.toString() || '';
+        if (err.code !== '42703' && !errMsg.toLowerCase().includes('does not exist')) {
+          console.error('Error creating idx_items_category_id:', err);
+        }
+      }
+      
       // Users table - must be created before comparisons (which references it)
       await client.query(`
         CREATE TABLE IF NOT EXISTS users (
@@ -163,12 +177,33 @@ const createTables = async () => {
       await client.query(`
         CREATE INDEX IF NOT EXISTS idx_items_elo ON items(elo_rating DESC)
       `);
-      await client.query(`
-        CREATE INDEX IF NOT EXISTS idx_items_familiarity ON items(familiarity_score DESC)
-      `);
-      await client.query(`
-        CREATE INDEX IF NOT EXISTS idx_items_confidence ON items(rating_confidence ASC)
-      `);
+      
+      // Try to create familiarity/confidence indexes - columns might not exist yet (handled by migrations)
+      try {
+        await client.query(`
+          CREATE INDEX IF NOT EXISTS idx_items_familiarity ON items(familiarity_score DESC)
+        `);
+      } catch (err) {
+        // Column doesn't exist yet - will be created by migrations
+        // PostgreSQL error code 42703 = undefined_column
+        const errMsg = err.message || err.toString() || '';
+        if (err.code !== '42703' && !errMsg.toLowerCase().includes('does not exist')) {
+          console.error('Error creating idx_items_familiarity:', err);
+        }
+      }
+      
+      try {
+        await client.query(`
+          CREATE INDEX IF NOT EXISTS idx_items_confidence ON items(rating_confidence ASC)
+        `);
+      } catch (err) {
+        // Column doesn't exist yet - will be created by migrations
+        // PostgreSQL error code 42703 = undefined_column
+        const errMsg = err.message || err.toString() || '';
+        if (err.code !== '42703' && !errMsg.toLowerCase().includes('does not exist')) {
+          console.error('Error creating idx_items_confidence:', err);
+        }
+      }
       await client.query(`
         CREATE INDEX IF NOT EXISTS idx_comparisons_winner ON comparisons(winner_id)
       `);
