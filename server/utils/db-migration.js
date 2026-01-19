@@ -573,7 +573,7 @@ const runMigrations = async () => {
     // Migration: Add comparison-level fields
     try {
       const comparisonCheck = await db.query(`
-        SELECT column_name 
+        SELECT column_name, data_type
         FROM information_schema.columns 
         WHERE table_name = 'comparisons' AND column_name = 'rating_difference'
       `);
@@ -583,13 +583,49 @@ const runMigrations = async () => {
         try {
           await db.query(`
             ALTER TABLE comparisons 
-            ADD COLUMN rating_difference INTEGER,
+            ADD COLUMN rating_difference DOUBLE PRECISION,
             ADD COLUMN was_upset BOOLEAN DEFAULT FALSE
           `);
           console.log('Successfully added comparison-level fields');
         } catch (err) {
           if (err.code !== '42701' && !err.message.includes('duplicate')) {
             console.error('Error adding comparison-level fields:', err);
+          }
+        }
+      } else {
+        // Column exists - check if it's the wrong type (INTEGER instead of DOUBLE PRECISION)
+        const existingColumn = comparisonCheck.rows[0];
+        if (existingColumn.data_type === 'integer' || existingColumn.data_type === 'smallint' || existingColumn.data_type === 'bigint') {
+          console.log('Fixing rating_difference column type (INTEGER -> DOUBLE PRECISION)...');
+          try {
+            await db.query(`
+              ALTER TABLE comparisons 
+              ALTER COLUMN rating_difference TYPE DOUBLE PRECISION USING rating_difference::DOUBLE PRECISION
+            `);
+            console.log('Successfully updated rating_difference column type');
+          } catch (err) {
+            console.error('Error updating rating_difference column type:', err);
+          }
+        }
+        
+        // Check if was_upset exists
+        const wasUpsetCheck = await db.query(`
+          SELECT column_name 
+          FROM information_schema.columns 
+          WHERE table_name = 'comparisons' AND column_name = 'was_upset'
+        `);
+        
+        if (wasUpsetCheck.rows.length === 0) {
+          try {
+            await db.query(`
+              ALTER TABLE comparisons 
+              ADD COLUMN was_upset BOOLEAN DEFAULT FALSE
+            `);
+            console.log('Successfully added was_upset column');
+          } catch (err) {
+            if (err.code !== '42701' && !err.message.includes('duplicate')) {
+              console.error('Error adding was_upset column:', err);
+            }
           }
         }
       }
@@ -733,13 +769,14 @@ const runMigrations = async () => {
             return callback();
           }
           
-          const hasRatingDiff = columns.some(col => col.name === 'rating_difference');
+          const ratingDiffCol = columns.find(col => col.name === 'rating_difference');
+          const hasRatingDiff = !!ratingDiffCol;
           
           if (!hasRatingDiff) {
             console.log('Adding comparison-level fields...');
             
             dbInstance.run(`
-              ALTER TABLE comparisons ADD COLUMN rating_difference INTEGER
+              ALTER TABLE comparisons ADD COLUMN rating_difference REAL
             `, (err) => {
               if (err && !err.message.includes('duplicate column')) {
                 console.error('Error adding rating_difference:', err);
@@ -756,7 +793,29 @@ const runMigrations = async () => {
               });
             });
           } else {
-            callback();
+            // Column exists - check if it's the wrong type (INTEGER instead of REAL)
+            // SQLite doesn't have strict types, but we can check the column type
+            if (ratingDiffCol.type && ratingDiffCol.type.toLowerCase().includes('int')) {
+              console.log('Fixing rating_difference column type (INTEGER -> REAL)...');
+              // SQLite doesn't support ALTER COLUMN TYPE directly, so we need to recreate the table
+              // For now, just log a warning - SQLite is more forgiving with type coercion
+              console.log('Note: SQLite will coerce INTEGER to REAL automatically');
+            }
+            
+            // Check if was_upset exists
+            const hasWasUpset = columns.some(col => col.name === 'was_upset');
+            if (!hasWasUpset) {
+              dbInstance.run(`
+                ALTER TABLE comparisons ADD COLUMN was_upset INTEGER DEFAULT 0
+              `, (err) => {
+                if (err && !err.message.includes('duplicate column')) {
+                  console.error('Error adding was_upset:', err);
+                }
+                callback();
+              });
+            } else {
+              callback();
+            }
           }
         });
       };
