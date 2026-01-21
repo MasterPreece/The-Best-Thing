@@ -188,7 +188,14 @@ const getRandomComparison = async (req, res) => {
         ${recencyJoin}
         WHERE i.image_url IS NOT NULL AND i.image_url != '' AND i.image_url != 'null' 
           AND i.image_url NOT LIKE '%placeholder.com%'
-        ORDER BY (vote_weight * recency_decay) * RANDOM() DESC
+        ORDER BY (
+          (CASE 
+            WHEN i.comparison_count = 0 THEN 1000.0
+            WHEN i.comparison_count BETWEEN 1 AND 5 THEN 100.0
+            WHEN i.comparison_count BETWEEN 6 AND 20 THEN 10.0
+            ELSE 1.0
+          END) * ${recencySelect}
+        ) * RANDOM() DESC
         LIMIT 20
       `).then(result => {
         if (!result || !result.rows || result.rows.length < 2) {
