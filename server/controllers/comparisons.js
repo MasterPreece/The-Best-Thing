@@ -191,8 +191,12 @@ const getRandomComparison = async (req, res) => {
         ORDER BY (vote_weight * recency_decay) * RANDOM() DESC
         LIMIT 20
       `).then(result => {
-        if (result.rows.length < 2) {
-          return res.status(404).json({ error: 'Not enough items in database' });
+        if (!result || !result.rows || result.rows.length < 2) {
+          console.error('[WeightedRandom] Not enough items with images in database. Found:', result?.rows?.length || 0);
+          return res.status(404).json({ 
+            error: 'Not enough items with images in database',
+            message: 'Please ensure there are at least 2 items with valid images (not placeholders)'
+          });
         }
         
           const shuffled = result.rows.sort(() => Math.random() - 0.5);
@@ -205,8 +209,42 @@ const getRandomComparison = async (req, res) => {
         console.log(`[WeightedRandom] Selected items: ${item1.title} (${item1.comparison_count} votes, weight: ${item1.vote_weight}, decay: ${item1.recency_decay}) vs ${item2.title} (${item2.comparison_count} votes, weight: ${item2.vote_weight}, decay: ${item2.recency_decay})`);
         res.json({ item1, item2 });
       }).catch(err => {
-        console.error('Error in weighted random selection:', err);
-        res.status(500).json({ error: 'Failed to fetch comparison' });
+        console.error('[WeightedRandom] Error in PostgreSQL weighted random selection:', err);
+        console.error('[WeightedRandom] Error details:', err.message, err.stack);
+        // Try fallback: get any items with images, even if fewer than 2
+        return db.query(`
+          SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
+                 c.id as category_id, c.name as category_name, c.slug as category_slug
+          FROM items i
+          LEFT JOIN categories c ON i.category_id = c.id
+          WHERE i.image_url IS NOT NULL 
+            AND i.image_url != '' 
+            AND i.image_url != 'null' 
+            AND i.image_url NOT LIKE '%placeholder.com%'
+          ORDER BY RANDOM()
+          LIMIT 20
+        `).then(fallbackResult => {
+          if (!fallbackResult || !fallbackResult.rows || fallbackResult.rows.length < 2) {
+            return res.status(404).json({ 
+              error: 'Not enough items with images',
+              message: `Found only ${fallbackResult?.rows?.length || 0} items with valid images. Need at least 2.`
+            });
+          }
+          const shuffled = fallbackResult.rows.sort(() => Math.random() - 0.5);
+          let item1 = shuffled[0];
+          let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+          if (item1.id === item2.id && shuffled.length > 1) {
+            item2 = shuffled[1];
+          }
+          console.log(`[WeightedRandom] Fallback: Selected ${item1.title} vs ${item2.title}`);
+          res.json({ item1, item2 });
+        }).catch(fallbackErr => {
+          console.error('[WeightedRandom] Fallback query also failed:', fallbackErr);
+          res.status(500).json({ 
+            error: 'Failed to fetch comparison',
+            message: fallbackErr.message 
+          });
+        });
       });
     } else {
       // SQLite version - use JavaScript to calculate weights and decay
@@ -295,7 +333,11 @@ const getRandomComparison = async (req, res) => {
       }
       
           if (!rows || rows.length < 2) {
-            return res.status(404).json({ error: 'Not enough items in database' });
+            console.error('[WeightedRandom] Not enough items with images in database. Found:', rows?.length || 0);
+            return res.status(404).json({ 
+              error: 'Not enough items with images in database',
+              message: `Found only ${rows?.length || 0} items with valid images. Need at least 2.`
+            });
           }
           
           processItems(rows, recentlySeen);
@@ -308,8 +350,13 @@ const getRandomComparison = async (req, res) => {
   try {
     await getWeightedRandomItems();
   } catch (err) {
-    console.error('Error in weighted random selection:', err);
-    res.status(500).json({ error: 'Failed to fetch comparison' });
+    console.error('[WeightedRandom] Unhandled error in weighted random selection:', err);
+    console.error('[WeightedRandom] Error stack:', err.stack);
+    res.status(500).json({ 
+      error: 'Failed to fetch comparison',
+      message: err.message || 'Unknown error occurred',
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 };
 
