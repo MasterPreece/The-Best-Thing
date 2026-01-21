@@ -156,7 +156,32 @@ const getAdminItems = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 50;
     const search = req.query.search || '';
+    const missingImage = req.query.missingImage === 'true';
+    const sortBy = req.query.sortBy || 'created_at'; // 'rating', 'comparisons', 'title', 'created_at'
     const offset = (page - 1) * limit;
+    
+    // Build WHERE clause for missing images filter (with and without table alias)
+    // Include placeholder.com images as missing
+    const imageFilter = missingImage 
+      ? `AND (i.image_url IS NULL OR i.image_url = '' OR i.image_url = 'null' OR i.image_url LIKE '%placeholder.com%')`
+      : '';
+    const imageFilterSimple = missingImage 
+      ? `AND (image_url IS NULL OR image_url = '' OR image_url = 'null' OR image_url LIKE '%placeholder.com%')`
+      : '';
+    
+    // Build ORDER BY clause based on sortBy (with and without table alias)
+    let orderBy = 'i.created_at DESC';
+    let simpleOrderBy = 'created_at DESC';
+    if (sortBy === 'rating') {
+      orderBy = 'i.elo_rating DESC, i.comparison_count DESC';
+      simpleOrderBy = 'elo_rating DESC, comparison_count DESC';
+    } else if (sortBy === 'comparisons') {
+      orderBy = 'i.comparison_count DESC, i.elo_rating DESC';
+      simpleOrderBy = 'comparison_count DESC, elo_rating DESC';
+    } else if (sortBy === 'title') {
+      orderBy = 'i.title ASC';
+      simpleOrderBy = 'title ASC';
+    }
     
     let items, total;
     
@@ -172,15 +197,15 @@ const getAdminItems = async (req, res) => {
                  c.name as category_name, c.slug as category_slug
           FROM items i
           LEFT JOIN categories c ON i.category_id = c.id
-          WHERE LOWER(i.title) LIKE ? OR LOWER(i.description) LIKE ?
-          ORDER BY i.created_at DESC
+          WHERE (LOWER(i.title) LIKE ? OR LOWER(i.description) LIKE ?) ${imageFilter}
+          ORDER BY ${orderBy}
           LIMIT ? OFFSET ?
         `, [searchTerm, searchTerm, limit, offset]);
         
         const countResult = await queryOne(`
           SELECT COUNT(*) as total
           FROM items
-          WHERE LOWER(title) LIKE ? OR LOWER(description) LIKE ?
+          WHERE (LOWER(title) LIKE ? OR LOWER(description) LIKE ?) ${imageFilterSimple}
         `, [searchTerm, searchTerm]);
         
         total = parseInt(countResult?.total || 0);
@@ -193,15 +218,15 @@ const getAdminItems = async (req, res) => {
           items = await queryMany(`
             SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses, created_at
             FROM items
-            WHERE LOWER(title) LIKE ? OR LOWER(description) LIKE ?
-            ORDER BY created_at DESC
+            WHERE (LOWER(title) LIKE ? OR LOWER(description) LIKE ?) ${imageFilterSimple}
+            ORDER BY ${simpleOrderBy}
             LIMIT ? OFFSET ?
           `, [searchTerm, searchTerm, limit, offset]);
           
           const countResult = await queryOne(`
             SELECT COUNT(*) as total
             FROM items
-            WHERE LOWER(title) LIKE ? OR LOWER(description) LIKE ?
+            WHERE (LOWER(title) LIKE ? OR LOWER(description) LIKE ?) ${imageFilterSimple}
           `, [searchTerm, searchTerm]);
           
           total = parseInt(countResult?.total || 0);
@@ -217,11 +242,15 @@ const getAdminItems = async (req, res) => {
                  c.name as category_name, c.slug as category_slug
           FROM items i
           LEFT JOIN categories c ON i.category_id = c.id
-          ORDER BY i.created_at DESC
+          WHERE 1=1 ${imageFilter}
+          ORDER BY ${orderBy}
           LIMIT ? OFFSET ?
         `, [limit, offset]);
         
-        const countResult = await queryOne(`SELECT COUNT(*) as total FROM items`);
+        const countQuery = missingImage 
+          ? `SELECT COUNT(*) as total FROM items WHERE (image_url IS NULL OR image_url = '' OR image_url = 'null' OR image_url LIKE '%placeholder.com%')`
+          : `SELECT COUNT(*) as total FROM items`;
+        const countResult = await queryOne(countQuery);
         total = parseInt(countResult?.total || 0);
       } catch (err) {
         // If categories column doesn't exist, use simple query
@@ -232,11 +261,15 @@ const getAdminItems = async (req, res) => {
           items = await queryMany(`
             SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses, created_at
             FROM items
-            ORDER BY created_at DESC
+            WHERE 1=1 ${imageFilterSimple}
+            ORDER BY ${simpleOrderBy}
             LIMIT ? OFFSET ?
           `, [limit, offset]);
           
-          const countResult = await queryOne(`SELECT COUNT(*) as total FROM items`);
+          const countQuery = missingImage 
+            ? `SELECT COUNT(*) as total FROM items WHERE (image_url IS NULL OR image_url = '' OR image_url = 'null' OR image_url LIKE '%placeholder.com%')`
+            : `SELECT COUNT(*) as total FROM items`;
+          const countResult = await queryOne(countQuery);
           total = parseInt(countResult?.total || 0);
         } else {
           throw err;
@@ -399,19 +432,25 @@ const getAdminStats = async (req, res) => {
         db.query('SELECT COUNT(*) as count FROM user_sessions'),
         db.query('SELECT COUNT(*) as count FROM users'),
         db.query('SELECT COUNT(*) as count FROM comments'),
-        db.query(`SELECT COUNT(*) as count FROM items WHERE image_url IS NOT NULL`)
+        db.query(`SELECT COUNT(*) as count FROM items WHERE image_url IS NOT NULL AND image_url != '' AND image_url != 'null' AND image_url NOT LIKE '%placeholder.com%'`),
+        db.query(`SELECT COUNT(*) as count FROM items WHERE image_url IS NULL OR image_url = '' OR image_url = 'null' OR image_url LIKE '%placeholder.com%'`)
       ]);
       
+      const totalItems = parseInt(results[0].rows[0]?.count || 0);
+      const itemsWithImages = parseInt(results[5].rows[0]?.count || 0);
+      const itemsWithoutImages = parseInt(results[6].rows[0]?.count || 0);
+      
       stats = {
-        totalItems: parseInt(results[0].rows[0]?.count || 0),
+        totalItems,
         totalComparisons: parseInt(results[1].rows[0]?.count || 0),
         totalUserSessions: parseInt(results[2].rows[0]?.count || 0),
         totalUsers: parseInt(results[3].rows[0]?.count || 0),
         totalComments: parseInt(results[4].rows[0]?.count || 0),
-        itemsWithImages: parseInt(results[5].rows[0]?.count || 0),
-        imageCoverage: results[0].rows[0]?.count > 0 
-          ? ((results[5].rows[0]?.count / results[0].rows[0]?.count) * 100).toFixed(1)
-          : 0
+        itemsWithImages,
+        itemsWithoutImages,
+        imageCoverage: totalItems > 0 
+          ? ((itemsWithImages / totalItems) * 100).toFixed(1)
+          : '0'
       };
     } else {
       const dbInstance = db.getDb();
@@ -421,20 +460,23 @@ const getAdminStats = async (req, res) => {
         new Promise(resolve => dbInstance.get('SELECT COUNT(*) as count FROM user_sessions', [], (err, row) => resolve(row))),
         new Promise(resolve => dbInstance.get('SELECT COUNT(*) as count FROM users', [], (err, row) => resolve(row))),
         new Promise(resolve => dbInstance.get('SELECT COUNT(*) as count FROM comments', [], (err, row) => resolve(row))),
-        new Promise(resolve => dbInstance.get('SELECT COUNT(*) as count FROM items WHERE image_url IS NOT NULL', [], (err, row) => resolve(row)))
+        new Promise(resolve => dbInstance.get(`SELECT COUNT(*) as count FROM items WHERE image_url IS NOT NULL AND image_url != '' AND image_url != 'null' AND image_url NOT LIKE '%placeholder.com%'`, [], (err, row) => resolve(row))),
+        new Promise(resolve => dbInstance.get(`SELECT COUNT(*) as count FROM items WHERE image_url IS NULL OR image_url = '' OR image_url = 'null' OR image_url LIKE '%placeholder.com%'`, [], (err, row) => resolve(row)))
       ]);
       
-      const totalItems = results[0] ? results[0].count : 0;
-      const itemsWithImages = results[5] ? results[5].count : 0;
+      const totalItems = parseInt(results[0]?.count || 0);
+      const itemsWithImages = parseInt(results[5]?.count || 0);
+      const itemsWithoutImages = parseInt(results[6]?.count || 0);
       
       stats = {
         totalItems,
-        totalComparisons: results[1] ? results[1].count : 0,
-        totalUserSessions: results[2] ? results[2].count : 0,
-        totalUsers: results[3] ? results[3].count : 0,
-        totalComments: results[4] ? results[4].count : 0,
+        totalComparisons: parseInt(results[1]?.count || 0),
+        totalUserSessions: parseInt(results[2]?.count || 0),
+        totalUsers: parseInt(results[3]?.count || 0),
+        totalComments: parseInt(results[4]?.count || 0),
         itemsWithImages,
-        imageCoverage: totalItems > 0 ? ((itemsWithImages / totalItems) * 100).toFixed(1) : 0
+        itemsWithoutImages,
+        imageCoverage: totalItems > 0 ? ((itemsWithImages / totalItems) * 100).toFixed(1) : '0'
       };
     }
     

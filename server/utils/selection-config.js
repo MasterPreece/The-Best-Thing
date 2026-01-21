@@ -78,7 +78,7 @@ const invalidateSettingsCache = () => {
 };
 
 /**
- * Get familiarity weight (default 0.5 = 50% familiarity, 50% variety)
+ * Get familiarity weight (default 0.2 = 20% familiarity, 80% variety)
  * Checks database settings first, then environment variable FAMILIARITY_WEIGHT, then default
  */
 const getFamiliarityWeight = async () => {
@@ -97,7 +97,7 @@ const getFamiliarityWeight = async () => {
       return parsed;
     }
   }
-  return 0.5; // Default: 50% familiarity, 50% variety
+  return 0.2; // Default: 20% familiarity, 80% variety (prioritizes new items)
 };
 
 /**
@@ -111,26 +111,29 @@ const getVarietyWeight = async () => {
 
 /**
  * Get selection thresholds
- * Returns object with familiarityThreshold and varietyThreshold
+ * Returns object with thresholds for different selection types
+ * New distribution: 20% familiarity, 50% zero-vote items, 30% items needing votes, 20% random
  */
 const getSelectionThresholds = async () => {
   const familiarityWeight = await getFamiliarityWeight();
   
-  // Split variety weight: 50% items needing votes, 50% random
-  const varietyWeight = await getVarietyWeight();
-  const itemsNeedingVotesWeight = varietyWeight * 0.5; // 25% of total (when familiarity is 50%)
-  const randomWeight = varietyWeight * 0.5; // 25% of total
+  // New distribution prioritizing items with 0 votes
+  // 20% familiarity, 50% zero-vote items, 30% items needing votes (1-20), 20% random
+  const zeroVotesWeight = 0.5; // 50% for items with 0 votes
+  const itemsNeedingVotesWeight = 0.3; // 30% for items with 1-20 votes
+  const randomWeight = 0.2; // 20% random variety
   
   return {
-    familiarityThreshold: familiarityWeight, // 0.5
-    itemsNeedingVotesThreshold: familiarityWeight + itemsNeedingVotesWeight, // 0.75
-    randomThreshold: 1.0 // 1.0 (everything above itemsNeedingVotesThreshold)
+    familiarityThreshold: familiarityWeight, // 0.2 (20%)
+    zeroVotesThreshold: familiarityWeight + zeroVotesWeight, // 0.7 (50%)
+    itemsNeedingVotesThreshold: familiarityWeight + zeroVotesWeight + itemsNeedingVotesWeight, // 0.9 (30%)
+    randomThreshold: 1.0 // 1.0 (20% random)
   };
 };
 
 /**
  * Get cooldown period (number of recent comparisons to exclude)
- * Default: 30 comparisons
+ * Default: 55 comparisons
  * Checks database settings first, then environment variable FAMILIARITY_COOLDOWN, then default
  */
 const getCooldownPeriod = async () => {
@@ -149,7 +152,7 @@ const getCooldownPeriod = async () => {
       return parsed;
     }
   }
-  return 30; // Default: exclude items from last 30 comparisons
+  return 55; // Default: exclude items from last 55 comparisons (increased to prevent repeats)
 };
 
 module.exports = {

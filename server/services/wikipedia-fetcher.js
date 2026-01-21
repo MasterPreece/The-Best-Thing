@@ -583,13 +583,14 @@ const fetchMoreItems = async (currentCount = 0, usePopular = true, batchSizePara
     
     // Fetch details for each article with rate limiting
     // Collect all page info first, then prioritize those with images
+    const apiDelay = await settings.getApiDelay();
     const pageInfos = [];
     for (let i = 0; i < titles.length; i++) {
       const title = titles[i];
       
       // Rate limiting: wait between requests
       if (i > 0) {
-        await new Promise(resolve => setTimeout(resolve, API_DELAY));
+        await new Promise(resolve => setTimeout(resolve, apiDelay));
       }
       
       const pageInfo = await fetchPageInfo(title);
@@ -707,12 +708,13 @@ const fetchPopularItemsOnly = async (count = 10) => {
     let skipped = 0;
     
     // Fetch details for each article with rate limiting
+    const apiDelay = await settings.getApiDelay();
     for (let i = 0; i < titles.length; i++) {
       const title = titles[i];
       
       // Rate limiting: wait between requests
       if (i > 0) {
-        await new Promise(resolve => setTimeout(resolve, API_DELAY));
+        await new Promise(resolve => setTimeout(resolve, apiDelay));
       }
       
       const pageInfo = await fetchPageInfo(title);

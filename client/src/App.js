@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Comparison from './components/Comparison';
@@ -11,6 +11,119 @@ import DonateModal from './components/DonateModal';
 import AdminLogin from './components/AdminLogin';
 import AdminDashboard from './components/AdminDashboard';
 import './App.css';
+
+function MoreMenu({ showAuthModal, setShowAuthModal, setShowDonateModal, user, logout, isAuthenticated }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef(null);
+  const location = useLocation();
+
+  const isActive = (path) => {
+    if (path === '/') {
+      return location.pathname === '/';
+    }
+    return location.pathname.startsWith(path);
+  };
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+
+    // Close on Escape key
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleEscape);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen]);
+
+  const handleMenuItemClick = () => {
+    setIsOpen(false);
+  };
+
+  return (
+    <div className="nav-more-menu" ref={menuRef}>
+      <button 
+        className="more-menu-button"
+        onClick={() => setIsOpen(!isOpen)}
+        aria-label="More menu"
+        aria-expanded={isOpen}
+      >
+        <span className="more-menu-icon">⋯</span>
+        <span className="more-menu-text">More</span>
+      </button>
+      
+      {isOpen && (
+        <div className="more-menu-dropdown">
+          {isAuthenticated && (
+            <>
+              <div className="more-menu-user-info">
+                <span className="more-menu-user-icon">👤</span>
+                <span className="more-menu-username">{user?.username}</span>
+              </div>
+              <div className="more-menu-divider"></div>
+              <Link 
+                to="/stats" 
+                className={`more-menu-item ${isActive('/stats') ? 'active' : ''}`}
+                onClick={handleMenuItemClick}
+              >
+                <span className="more-menu-item-icon">📊</span>
+                <span className="more-menu-item-text">My Stats</span>
+              </Link>
+              <div className="more-menu-divider"></div>
+            </>
+          )}
+          <button 
+            className="more-menu-item"
+            onClick={() => {
+              setShowDonateModal(true);
+              handleMenuItemClick();
+            }}
+          >
+            <span className="more-menu-item-icon">💝</span>
+            <span className="more-menu-item-text">Donate</span>
+          </button>
+          {isAuthenticated ? (
+            <button 
+              className="more-menu-item more-menu-item-logout"
+              onClick={() => {
+                logout();
+                handleMenuItemClick();
+              }}
+            >
+              <span className="more-menu-item-icon">🚪</span>
+              <span className="more-menu-item-text">Logout</span>
+            </button>
+          ) : (
+            <button 
+              className="more-menu-item"
+              onClick={() => {
+                setShowAuthModal(true);
+                handleMenuItemClick();
+              }}
+            >
+              <span className="more-menu-item-icon">🔐</span>
+              <span className="more-menu-item-text">Login</span>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function NavLinks({ showAuthModal, setShowAuthModal, setShowDonateModal, user, logout, isAuthenticated }) {
   const location = useLocation();
@@ -45,24 +158,14 @@ function NavLinks({ showAuthModal, setShowAuthModal, setShowDonateModal, user, l
         <span className="nav-link-icon">🏅</span>
         <span className="nav-link-text">Leaderboard</span>
       </Link>
-      <button className="nav-donate" onClick={() => setShowDonateModal(true)}>
-        💝 Donate
-      </button>
-      {isAuthenticated ? (
-        <>
-          <Link 
-            to="/stats" 
-            className={`nav-link nav-link-primary ${isActive('/stats') ? 'active' : ''}`}
-          >
-            <span className="nav-link-icon">📊</span>
-            <span className="nav-link-text">My Stats</span>
-          </Link>
-          <span className="nav-user">👤 {user?.username}</span>
-          <button className="nav-logout" onClick={logout}>Logout</button>
-        </>
-      ) : (
-        <button className="nav-login" onClick={() => setShowAuthModal(true)}>Login</button>
-      )}
+      <MoreMenu 
+        showAuthModal={showAuthModal}
+        setShowAuthModal={setShowAuthModal}
+        setShowDonateModal={setShowDonateModal}
+        user={user}
+        logout={logout}
+        isAuthenticated={isAuthenticated}
+      />
     </div>
   );
 }

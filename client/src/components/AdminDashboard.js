@@ -15,6 +15,8 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
   const [page, setPage] = useState(1);
   const limit = 50; // Fixed limit per page
   const [search, setSearch] = useState('');
+  const [missingImage, setMissingImage] = useState(false);
+  const [sortBy, setSortBy] = useState('created_at');
   const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
@@ -50,6 +52,8 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
         limit: limit.toString()
       });
       if (search) params.append('search', search);
+      if (missingImage) params.append('missingImage', 'true');
+      if (sortBy) params.append('sortBy', sortBy);
 
       const response = await api.get(`/api/admin/items?${params}`);
       setItems(response.data.items || []);
@@ -67,7 +71,7 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
     } finally {
       setLoading(false);
     }
-  }, [page, limit, search, api, onLogout]);
+  }, [page, limit, search, missingImage, sortBy, api, onLogout]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -107,6 +111,16 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
   const handleSearch = (e) => {
     setSearch(e.target.value);
     setPage(1); // Reset to first page when searching
+  };
+
+  const handleMissingImageChange = (e) => {
+    setMissingImage(e.target.checked);
+    setPage(1); // Reset to first page when filtering
+  };
+
+  const handleSortChange = (e) => {
+    setSortBy(e.target.value);
+    setPage(1); // Reset to first page when sorting
   };
 
   const handleDelete = async (id) => {
@@ -152,6 +166,12 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
             <div className="stat-value">{stats.itemsWithImages}</div>
             <div className="stat-label">Items with Images</div>
           </div>
+          {stats.itemsWithoutImages !== undefined && (
+            <div className="stat-card">
+              <div className="stat-value">{stats.itemsWithoutImages}</div>
+              <div className="stat-label">Items without Images</div>
+            </div>
+          )}
           <div className="stat-card">
             <div className="stat-value">{stats.imageCoverage}%</div>
             <div className="stat-label">Image Coverage</div>
@@ -269,6 +289,26 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
             className="search-input"
           />
         </div>
+        <div className="filter-controls">
+          <label className="filter-checkbox">
+            <input
+              type="checkbox"
+              checked={missingImage}
+              onChange={handleMissingImageChange}
+            />
+            <span>Show only items without images</span>
+          </label>
+          <select
+            value={sortBy}
+            onChange={handleSortChange}
+            className="sort-select"
+          >
+            <option value="created_at">Sort by: Recently Added</option>
+            <option value="rating">Sort by: Rating (Highest)</option>
+            <option value="comparisons">Sort by: Comparisons (Most)</option>
+            <option value="title">Sort by: Title (A-Z)</option>
+          </select>
+        </div>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
@@ -303,6 +343,9 @@ const AdminDashboard = ({ adminToken, onLogout }) => {
                       <td className="title-cell">
                         <div className="item-title-row">
                           <div className="item-title">{item.title}</div>
+                          {(!item.image_url || item.image_url === '' || item.image_url === 'null' || item.image_url?.includes('placeholder.com')) ? (
+                            <span className="missing-image-badge" title="Missing image or placeholder - will not appear in comparisons">📷 No Image</span>
+                          ) : null}
                           {item.category_name && (
                             <span className="category-badge-small">{item.category_name}</span>
                           )}

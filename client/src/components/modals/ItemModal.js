@@ -12,6 +12,7 @@ const ItemModal = ({ item, onClose, onSave, api }) => {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [imagePreviewError, setImagePreviewError] = useState(false);
 
   useEffect(() => {
     // Fetch categories
@@ -76,13 +77,41 @@ const ItemModal = ({ item, onClose, onSave, api }) => {
           </div>
 
           <div className="form-group">
-            <label>Image URL</label>
+            <label>
+              Image URL <span className="required-asterisk">*</span>
+              <span className="field-description">(Required for items to appear in comparisons)</span>
+            </label>
             <input
               type="url"
               value={formData.imageUrl}
-              onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+              onChange={(e) => {
+                setFormData({ ...formData, imageUrl: e.target.value });
+                setImagePreviewError(false);
+              }}
               placeholder="https://example.com/image.jpg"
+              className={!formData.imageUrl || formData.imageUrl.trim() === '' ? 'warning-input' : ''}
             />
+            {(!formData.imageUrl || formData.imageUrl.trim() === '') && (
+              <div className="warning-message">
+                ⚠️ Warning: Items without images will not appear in comparisons. Please add an image URL.
+              </div>
+            )}
+            {formData.imageUrl && formData.imageUrl.trim() !== '' && (
+              <div className="image-preview-container">
+                <img
+                  src={formData.imageUrl}
+                  alt="Preview"
+                  className={`image-preview ${imagePreviewError ? 'preview-error' : ''}`}
+                  onError={() => setImagePreviewError(true)}
+                  onLoad={() => setImagePreviewError(false)}
+                />
+                {imagePreviewError && (
+                  <div className="preview-error-message">
+                    ❌ Could not load image. Please check the URL.
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="form-group">

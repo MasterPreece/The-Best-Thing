@@ -46,7 +46,10 @@ const Comparison = ({ userSessionId }) => {
     }
     
     try {
-      const response = await axios.get('/api/comparison');
+      // Get session ID from localStorage to pass to backend for user-specific cooldown
+      const sessionId = localStorage.getItem('userSessionId');
+      const url = sessionId ? `/api/comparison?sessionId=${encodeURIComponent(sessionId)}` : '/api/comparison';
+      const response = await axios.get(url);
       setItems(response.data);
       
       // Fetch detailed stats for hover display
