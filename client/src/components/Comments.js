@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import CommentForm from './CommentForm';
 import CommentItem from './CommentItem';
@@ -10,7 +10,7 @@ const Comments = ({ itemId, itemTitle }) => {
   const [error, setError] = useState(null);
   const commentsEndRef = useRef(null);
 
-  const fetchComments = async () => {
+  const fetchComments = useCallback(async () => {
     setLoading(true);
     setError(null);
     
@@ -23,13 +23,13 @@ const Comments = ({ itemId, itemTitle }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [itemId]);
 
   useEffect(() => {
     if (itemId) {
       fetchComments();
     }
-  }, [itemId]);
+  }, [itemId, fetchComments]);
 
   useEffect(() => {
     // Auto-scroll to bottom when new comment is added
@@ -44,12 +44,6 @@ const Comments = ({ itemId, itemTitle }) => {
 
   const handleCommentDeleted = (commentId) => {
     setComments(prev => prev.filter(c => c.id !== commentId));
-  };
-
-  const scrollToBottom = () => {
-    if (commentsEndRef.current) {
-      commentsEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
   };
 
   return (

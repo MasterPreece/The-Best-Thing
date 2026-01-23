@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useCallback } from 'react';
 import Comments from './Comments';
 import './Comments.css';
 
@@ -9,13 +9,13 @@ const CommentsModal = ({ itemId, itemTitle, onClose }) => {
     }
   };
 
-  const handleEscape = (e) => {
+  const handleEscape = useCallback((e) => {
     if (e.key === 'Escape') {
       onClose();
     }
-  };
+  }, [onClose]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     document.addEventListener('keydown', handleEscape);
     document.body.style.overflow = 'hidden'; // Prevent background scrolling
     
@@ -23,7 +23,7 @@ const CommentsModal = ({ itemId, itemTitle, onClose }) => {
       document.removeEventListener('keydown', handleEscape);
       document.body.style.overflow = 'unset';
     };
-  }, []);
+  }, [handleEscape]);
 
   return (
     <div className="comments-modal" onClick={handleOverlayClick}>
