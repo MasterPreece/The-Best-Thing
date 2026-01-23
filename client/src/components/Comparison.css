@@ -237,32 +237,45 @@
   touch-action: manipulation;
 }
 
-.submit-photo-button {
+.submit-photo-button,
+.discuss-button {
   position: absolute;
   top: 10px;
-  right: 10px;
-  background: rgba(102, 126, 234, 0.9);
+  background: rgba(0, 0, 0, 0.6);
   color: white;
   border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 20px;
-  font-size: 0.85rem;
-  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 500;
   cursor: pointer;
-  z-index: 100;
   pointer-events: auto;
   transition: all 0.2s;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  opacity: 0.85;
+  white-space: nowrap;
+  z-index: 10;
 }
 
-.submit-photo-button:hover {
-  background: rgba(102, 126, 234, 1);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+.submit-photo-button {
+  left: 10px;
 }
 
-.submit-photo-button:active {
+.discuss-button {
+  right: 10px;
+}
+
+.submit-photo-button:hover,
+.discuss-button:hover {
+  background: rgba(0, 0, 0, 0.8);
+  opacity: 1;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.submit-photo-button:active,
+.discuss-button:active {
   transform: translateY(0);
 }
 

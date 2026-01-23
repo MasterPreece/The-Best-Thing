@@ -290,6 +290,28 @@
   line-height: 1.5;
 }
 
+.rank-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+
+.view-discussion-button {
+  padding: 6px 12px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.view-discussion-button:hover {
+  background: #2563eb;
+}
+
 .rank-stats {
   display: flex;
   flex-direction: column;

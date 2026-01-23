@@ -4,6 +4,7 @@ import axios from 'axios';
 import { RankingSkeleton } from './SkeletonLoader';
 import ItemSubmissionModal from './ItemSubmissionModal';
 import RisingFallingSidebar from './RisingFallingSidebar';
+import CommentsModal from './CommentsModal';
 import './Rankings.css';
 
 const Rankings = () => {
@@ -19,6 +20,7 @@ const Rankings = () => {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [sortOrder, setSortOrder] = useState('highest'); // 'highest' or 'lowest'
   const [showItemModal, setShowItemModal] = useState(false);
+  const [commentsModal, setCommentsModal] = useState({ open: false, itemId: null, itemTitle: null });
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -297,6 +299,24 @@ const Rankings = () => {
                   <div className="stat">
                     <strong>W/L:</strong> {item.wins || 0}/{item.losses || 0}
                   </div>
+                  {item.comment_count > 0 && (
+                    <div className="stat">
+                      <strong>💬</strong> {item.comment_count}
+                    </div>
+                  )}
+                </div>
+                <div className="rank-actions">
+                  <button
+                    className="view-discussion-button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setCommentsModal({ open: true, itemId: item.id, itemTitle: item.title });
+                    }}
+                    title="View discussion"
+                  >
+                    💬 Discuss
+                  </button>
                 </div>
               </div>
             </Link>
@@ -315,6 +335,14 @@ const Rankings = () => {
             setShowItemModal(false);
           }}
           userSessionId={userSessionId}
+        />
+      )}
+
+      {commentsModal.open && (
+        <CommentsModal
+          itemId={commentsModal.itemId}
+          itemTitle={commentsModal.itemTitle}
+          onClose={() => setCommentsModal({ open: false, itemId: null, itemTitle: null })}
         />
       )}
     </div>

@@ -176,6 +176,7 @@ const getRandomComparison = async (req, res) => {
         SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
                i.familiarity_score, i.rating_confidence,
                c.id as category_id, c.name as category_name, c.slug as category_slug,
+               COALESCE(comment_stats.comment_count, 0) as comment_count,
                CASE 
                  WHEN i.comparison_count = 0 THEN 1000.0
                  WHEN i.comparison_count BETWEEN 1 AND 5 THEN 100.0
@@ -185,6 +186,11 @@ const getRandomComparison = async (req, res) => {
                ${recencySelect} as recency_decay
         FROM items i
         LEFT JOIN categories c ON i.category_id = c.id
+        LEFT JOIN (
+          SELECT item_id, COUNT(*) as comment_count 
+          FROM comments 
+          GROUP BY item_id
+        ) comment_stats ON i.id = comment_stats.item_id
         ${recencyJoin}
         WHERE i.image_url IS NOT NULL AND i.image_url != '' AND i.image_url != 'null' 
           AND i.image_url NOT LIKE '%placeholder.com%'
@@ -221,9 +227,15 @@ const getRandomComparison = async (req, res) => {
         // Try fallback: get any items with images, even if fewer than 2
         return db.query(`
           SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
-                 c.id as category_id, c.name as category_name, c.slug as category_slug
+                 c.id as category_id, c.name as category_name, c.slug as category_slug,
+                 COALESCE(comment_stats.comment_count, 0) as comment_count
           FROM items i
           LEFT JOIN categories c ON i.category_id = c.id
+          LEFT JOIN (
+            SELECT item_id, COUNT(*) as comment_count 
+            FROM comments 
+            GROUP BY item_id
+          ) comment_stats ON i.id = comment_stats.item_id
           WHERE i.image_url IS NOT NULL 
             AND i.image_url != '' 
             AND i.image_url != 'null' 
@@ -306,9 +318,15 @@ const getRandomComparison = async (req, res) => {
         dbInstance.all(`
           SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
                  i.familiarity_score, i.rating_confidence,
-                 c.id as category_id, c.name as category_name, c.slug as category_slug
+                 c.id as category_id, c.name as category_name, c.slug as category_slug,
+                 COALESCE(comment_stats.comment_count, 0) as comment_count
           FROM items i
           LEFT JOIN categories c ON i.category_id = c.id
+          LEFT JOIN (
+            SELECT item_id, COUNT(*) as comment_count 
+            FROM comments 
+            GROUP BY item_id
+          ) comment_stats ON i.id = comment_stats.item_id
           WHERE i.image_url IS NOT NULL AND i.image_url != '' AND i.image_url != 'null' 
             AND i.image_url NOT LIKE '%placeholder.com%'
           ORDER BY RANDOM()
@@ -321,8 +339,14 @@ const getRandomComparison = async (req, res) => {
                 errorStr.includes('no such column') || errorStr.includes('category')) {
               console.log('[WeightedRandom] Columns not available, using simple query');
               return dbInstance.all(`
-                SELECT id, title, image_url, description, elo_rating, comparison_count
-                FROM items
+                SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
+                       COALESCE(comment_stats.comment_count, 0) as comment_count
+                FROM items i
+                LEFT JOIN (
+                  SELECT item_id, COUNT(*) as comment_count 
+                  FROM comments 
+                  GROUP BY item_id
+                ) comment_stats ON i.id = comment_stats.item_id
                 WHERE image_url IS NOT NULL AND image_url != '' AND image_url != 'null' 
                   AND image_url NOT LIKE '%placeholder.com%'
                 ORDER BY RANDOM()

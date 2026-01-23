@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import Toast from './Toast';
 import AccountPrompt from './AccountPrompt';
 import TrendingItems from './TrendingItems';
-import PhotoSubmissionModal from './PhotoSubmissionModal';
+import CommentsModal from './CommentsModal';
 import { ComparisonSkeleton } from './SkeletonLoader';
 import { animateNumber } from '../utils/numberAnimation';
 import './Comparison.css';
@@ -20,7 +20,7 @@ const Comparison = ({ userSessionId }) => {
   const [showAccountPrompt, setShowAccountPrompt] = useState(false);
   const [comparisonCount, setComparisonCount] = useState(0);
   const [globalStats, setGlobalStats] = useState(null);
-  const [showPhotoModal, setShowPhotoModal] = useState(null); // item1 or item2
+  const [commentsModal, setCommentsModal] = useState({ open: false, itemId: null, itemTitle: null });
   const { token, isAuthenticated } = useAuth();
   const statsRef = useRef(null);
 
@@ -381,15 +381,15 @@ const Comparison = ({ userSessionId }) => {
             )}
             <button
               type="button"
-              className="submit-photo-button"
+              className="discuss-button"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                setShowPhotoModal('item1');
+                setCommentsModal({ open: true, itemId: items.item1.id, itemTitle: items.item1.title });
               }}
-              title="Submit a photo for this item"
+              title="Discuss this item"
             >
-              📷 Submit Photo
+              💬 Discuss
             </button>
             {itemStats.item1 && (
               <div className="item-hover-stats">
@@ -457,15 +457,15 @@ const Comparison = ({ userSessionId }) => {
             )}
             <button
               type="button"
-              className="submit-photo-button"
+              className="discuss-button"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                setShowPhotoModal('item2');
+                setCommentsModal({ open: true, itemId: items.item2.id, itemTitle: items.item2.title });
               }}
-              title="Submit a photo for this item"
+              title="Discuss this item"
             >
-              📷 Submit Photo
+              💬 Discuss
             </button>
             {itemStats.item2 && (
               <div className="item-hover-stats">
@@ -560,15 +560,11 @@ const Comparison = ({ userSessionId }) => {
 
       <TrendingItems />
 
-      {showPhotoModal && (
-        <PhotoSubmissionModal
-          item={showPhotoModal === 'item1' ? items.item1 : items.item2}
-          onClose={() => setShowPhotoModal(null)}
-          onSuccess={() => {
-            showToast('Photo submitted! It will be reviewed by an admin.', 'success');
-          }}
-          userSessionId={userSessionId}
-          token={token}
+      {commentsModal.open && (
+        <CommentsModal
+          itemId={commentsModal.itemId}
+          itemTitle={commentsModal.itemTitle}
+          onClose={() => setCommentsModal({ open: false, itemId: null, itemTitle: null })}
         />
       )}
     </div>

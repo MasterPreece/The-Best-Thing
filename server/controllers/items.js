@@ -23,15 +23,27 @@ const getRankings = async (req, res) => {
       try {
         const sql = categoryId
           ? `SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count, i.wins, i.losses,
-                    c.id as category_id, c.name as category_name, c.slug as category_slug
+                    c.id as category_id, c.name as category_name, c.slug as category_slug,
+                    COALESCE(comment_stats.comment_count, 0) as comment_count
              FROM items i
              LEFT JOIN categories c ON i.category_id = c.id
+             LEFT JOIN (
+               SELECT item_id, COUNT(*) as comment_count 
+               FROM comments 
+               GROUP BY item_id
+             ) comment_stats ON i.id = comment_stats.item_id
              WHERE i.category_id = ?
              ORDER BY i.elo_rating ${sortOrder}`
           : `SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count, i.wins, i.losses,
-                    c.id as category_id, c.name as category_name, c.slug as category_slug
+                    c.id as category_id, c.name as category_name, c.slug as category_slug,
+                    COALESCE(comment_stats.comment_count, 0) as comment_count
              FROM items i
              LEFT JOIN categories c ON i.category_id = c.id
+             LEFT JOIN (
+               SELECT item_id, COUNT(*) as comment_count 
+               FROM comments 
+               GROUP BY item_id
+             ) comment_stats ON i.id = comment_stats.item_id
              ORDER BY i.elo_rating ${sortOrder}`;
         
         rankings = await queryMany(sql, categoryParams);
@@ -45,13 +57,25 @@ const getRankings = async (req, res) => {
             (err.code === 'SQLITE_ERROR' && errorStr.includes('category'))) {
           console.log('Categories not available for rankings, using simple query');
           const simpleSql = categoryId 
-            ? `SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses
-               FROM items
-               WHERE category_id = ?
-               ORDER BY elo_rating ${sortOrder}`
-            : `SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses
-               FROM items
-               ORDER BY elo_rating ${sortOrder}`;
+            ? `SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count, i.wins, i.losses,
+                      COALESCE(comment_stats.comment_count, 0) as comment_count
+               FROM items i
+               LEFT JOIN (
+                 SELECT item_id, COUNT(*) as comment_count 
+                 FROM comments 
+                 GROUP BY item_id
+               ) comment_stats ON i.id = comment_stats.item_id
+               WHERE i.category_id = ?
+               ORDER BY i.elo_rating ${sortOrder}`
+            : `SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count, i.wins, i.losses,
+                      COALESCE(comment_stats.comment_count, 0) as comment_count
+               FROM items i
+               LEFT JOIN (
+                 SELECT item_id, COUNT(*) as comment_count 
+                 FROM comments 
+                 GROUP BY item_id
+               ) comment_stats ON i.id = comment_stats.item_id
+               ORDER BY i.elo_rating ${sortOrder}`;
           
           rankings = await queryMany(simpleSql, categoryParams);
           total = rankings.length;
@@ -70,18 +94,30 @@ const getRankings = async (req, res) => {
     
     // Paginated query
     try {
-      const sql = categoryId
-        ? `SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count, i.wins, i.losses,
-                  c.id as category_id, c.name as category_name, c.slug as category_slug
+        const sql = categoryId
+          ? `SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count, i.wins, i.losses,
+                  c.id as category_id, c.name as category_name, c.slug as category_slug,
+                  COALESCE(comment_stats.comment_count, 0) as comment_count
            FROM items i
            LEFT JOIN categories c ON i.category_id = c.id
+           LEFT JOIN (
+             SELECT item_id, COUNT(*) as comment_count 
+             FROM comments 
+             GROUP BY item_id
+           ) comment_stats ON i.id = comment_stats.item_id
            WHERE i.category_id = ?
            ORDER BY i.elo_rating ${sortOrder}
            LIMIT ? OFFSET ?`
         : `SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count, i.wins, i.losses,
-                  c.id as category_id, c.name as category_name, c.slug as category_slug
+                  c.id as category_id, c.name as category_name, c.slug as category_slug,
+                  COALESCE(comment_stats.comment_count, 0) as comment_count
            FROM items i
            LEFT JOIN categories c ON i.category_id = c.id
+           LEFT JOIN (
+             SELECT item_id, COUNT(*) as comment_count 
+             FROM comments 
+             GROUP BY item_id
+           ) comment_stats ON i.id = comment_stats.item_id
            ORDER BY i.elo_rating ${sortOrder}
            LIMIT ? OFFSET ?`;
       
@@ -104,14 +140,26 @@ const getRankings = async (req, res) => {
           (err.code === 'SQLITE_ERROR' && errorStr.includes('category'))) {
         console.log('Categories not available for rankings, using simple query');
         const simpleSql = categoryId 
-          ? `SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses
-             FROM items
-             WHERE category_id = ?
-             ORDER BY elo_rating ${sortOrder}
+          ? `SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count, i.wins, i.losses,
+                    COALESCE(comment_stats.comment_count, 0) as comment_count
+             FROM items i
+             LEFT JOIN (
+               SELECT item_id, COUNT(*) as comment_count 
+               FROM comments 
+               GROUP BY item_id
+             ) comment_stats ON i.id = comment_stats.item_id
+             WHERE i.category_id = ?
+             ORDER BY i.elo_rating ${sortOrder}
              LIMIT ? OFFSET ?`
-          : `SELECT id, title, image_url, description, elo_rating, comparison_count, wins, losses
-             FROM items
-             ORDER BY elo_rating ${sortOrder}
+          : `SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count, i.wins, i.losses,
+                    COALESCE(comment_stats.comment_count, 0) as comment_count
+             FROM items i
+             LEFT JOIN (
+               SELECT item_id, COUNT(*) as comment_count 
+               FROM comments 
+               GROUP BY item_id
+             ) comment_stats ON i.id = comment_stats.item_id
+             ORDER BY i.elo_rating ${sortOrder}
              LIMIT ? OFFSET ?`;
         
         const simpleParams = categoryId ? [categoryId, limit, offset] : [limit, offset];

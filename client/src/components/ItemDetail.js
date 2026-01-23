@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { ItemDetailSkeleton } from './ItemDetailSkeleton';
 import PhotoSubmissionModal from './PhotoSubmissionModal';
+import Comments from './Comments';
 import './ItemDetail.css';
 
 const ItemDetail = () => {
@@ -13,9 +14,6 @@ const ItemDetail = () => {
   const [item, setItem] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [comments, setComments] = useState([]);
-  const [newComment, setNewComment] = useState('');
-  const [commentLoading, setCommentLoading] = useState(false);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [imageError, setImageError] = useState(false);
 
@@ -41,53 +39,6 @@ const ItemDetail = () => {
     }
   }, [id]);
 
-  const fetchComments = useCallback(async () => {
-    if (!id) return;
-    try {
-      const response = await axios.get(`/api/items/${id}/comments`);
-      setComments(response.data.comments || []);
-    } catch (error) {
-      console.error('Error fetching comments:', error);
-    }
-  }, [id]);
-
-  useEffect(() => {
-    if (id) {
-      fetchComments();
-    }
-  }, [id, fetchComments]);
-
-  const handleSubmitComment = async (e) => {
-    e.preventDefault();
-    if (!newComment.trim()) return;
-
-    setCommentLoading(true);
-    try {
-      const response = await axios.post(`/api/items/${id}/comments`, {
-        content: newComment.trim(),
-        userSessionId: localStorage.getItem('userSessionId')
-      });
-      setComments([response.data.comment, ...comments]);
-      setNewComment('');
-    } catch (error) {
-      console.error('Error creating comment:', error);
-      alert('Failed to post comment. Please try again.');
-    } finally {
-      setCommentLoading(false);
-    }
-  };
-
-  const handleDeleteComment = async (commentId) => {
-    if (!window.confirm('Are you sure you want to delete this comment?')) return;
-
-    try {
-      await axios.delete(`/api/comments/${commentId}`);
-      setComments(comments.filter(c => c.id !== commentId));
-    } catch (error) {
-      console.error('Error deleting comment:', error);
-      alert('Failed to delete comment. Please try again.');
-    }
-  };
 
   const getWikipediaUrl = (title) => {
     return `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
@@ -329,54 +280,7 @@ const ItemDetail = () => {
         )}
 
         <div className="section comments-section">
-          <h2>💬 Discussions</h2>
-          
-          <form onSubmit={handleSubmitComment} className="comment-form">
-            <textarea
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder={isAuthenticated ? "Share your thoughts..." : "Login to comment..."}
-              disabled={!isAuthenticated || commentLoading}
-              maxLength={1000}
-              className="comment-input"
-              rows={3}
-            />
-            <div className="comment-form-footer">
-              <span className="comment-char-count">{newComment.length}/1000</span>
-              <button 
-                type="submit" 
-                disabled={!isAuthenticated || !newComment.trim() || commentLoading}
-                className="comment-submit-btn"
-              >
-                {commentLoading ? 'Posting...' : 'Post Comment'}
-              </button>
-            </div>
-          </form>
-
-          <div className="comments-list">
-            {comments.length === 0 ? (
-              <p className="no-comments">No comments yet. Be the first to share your thoughts!</p>
-            ) : (
-              comments.map((comment) => (
-                <div key={comment.id} className="comment-item">
-                  <div className="comment-header">
-                    <span className="comment-author">{comment.username || 'Anonymous'}</span>
-                    <span className="comment-date">{formatDate(comment.created_at)}</span>
-                    {isAuthenticated && user?.id === comment.user_id && (
-                      <button
-                        onClick={() => handleDeleteComment(comment.id)}
-                        className="comment-delete-btn"
-                        title="Delete comment"
-                      >
-                        🗑️
-                      </button>
-                    )}
-                  </div>
-                  <div className="comment-content">{comment.content}</div>
-                </div>
-              ))
-            )}
-          </div>
+          <Comments itemId={item.id} itemTitle={item.title} />
         </div>
       </div>
 
