@@ -38,6 +38,24 @@ if (!USE_POSTGRES) {
   }
 }
 
+// Retry helper with exponential backoff
+const retryWithBackoff = async (fn, maxRetries = 5, initialDelay = 1000) => {
+  let lastError;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxRetries - 1) {
+        const delay = initialDelay * Math.pow(2, attempt);
+        console.log(`Connection attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  throw lastError;
+};
+
 const init = async () => {
   if (USE_POSTGRES) {
     // PostgreSQL initialization
@@ -46,16 +64,32 @@ const init = async () => {
     
     const pool = new Pool({
       connectionString: DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+      // Connection pool settings
+      max: 20, // Maximum number of clients in the pool
+      idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
+      connectionTimeoutMillis: 15000, // Return an error after 15 seconds if connection could not be established
+      // Keep connections alive
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000
     });
     
-    // Test connection
+    // Handle pool errors (log but don't crash)
+    pool.on('error', (err) => {
+      console.error('Unexpected error on idle PostgreSQL client:', err);
+    });
+    
+    // Test connection with retry logic
     try {
-      await pool.query('SELECT NOW()');
+      await retryWithBackoff(async () => {
+        const result = await pool.query('SELECT NOW()');
+        return result;
+      }, 5, 2000); // 5 retries, starting with 2 second delay
       console.log('Connected to PostgreSQL database');
       db = pool;
     } catch (err) {
-      console.error('PostgreSQL connection error:', err);
+      console.error('PostgreSQL connection error after retries:', err);
+      console.error('Error details:', err.message);
       throw err;
     }
     

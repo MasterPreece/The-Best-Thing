@@ -53,39 +53,61 @@ if (fs.existsSync(buildIndexPath)) {
   });
 }
 
-// Initialize database and start server
-db.init().then(() => {
-  // Run migrations
-  return runMigrations();
-}).then(async () => {
-  console.log('Database initialized successfully');
+// Initialize database and start server with retry logic
+const initializeWithRetry = async (maxRetries = 5, delay = 5000) => {
+  let lastError;
   
-  // Seed default categories if they don't exist
-  try {
-    const seedCategories = require('./scripts/seed-categories-default');
-    await seedCategories();
-  } catch (err) {
-    console.error('Error seeding categories (non-fatal):', err);
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      await db.init();
+      // Run migrations
+      await runMigrations();
+      console.log('Database initialized successfully');
+      
+      // Seed default categories if they don't exist
+      try {
+        const seedCategories = require('./scripts/seed-categories-default');
+        await seedCategories();
+      } catch (err) {
+        console.error('Error seeding categories (non-fatal):', err);
+      }
+      
+      // Auto-seed if database is empty (runs in background, doesn't block server start)
+      autoSeedIfEmpty().then(() => {
+        console.log('Auto-seed check completed');
+      }).catch(err => {
+        console.error('Auto-seed error (non-fatal):', err);
+      });
+      
+      // Start server immediately (seeding happens in background)
+      app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+        console.log(`API endpoints available at http://localhost:${PORT}/api`);
+        
+        // Start the scheduler to grow the database over time
+        scheduler.startScheduler();
+      });
+      
+      return; // Success, exit the retry loop
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxRetries - 1) {
+        const retryDelay = delay * Math.pow(2, attempt);
+        console.error(`Database initialization attempt ${attempt + 1} failed:`, err.message);
+        console.log(`Retrying in ${retryDelay}ms... (attempt ${attempt + 2}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+    }
   }
   
-  // Auto-seed if database is empty (runs in background, doesn't block server start)
-  autoSeedIfEmpty().then(() => {
-    console.log('Auto-seed check completed');
-  }).catch(err => {
-    console.error('Auto-seed error (non-fatal):', err);
-  });
-  
-  // Start server immediately (seeding happens in background)
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`API endpoints available at http://localhost:${PORT}/api`);
-    
-    // Start the scheduler to grow the database over time
-    scheduler.startScheduler();
-  });
-}).catch(err => {
-  console.error('Failed to initialize database:', err);
-  console.error('Error details:', err.message);
+  // If we get here, all retries failed
+  console.error('Failed to initialize database after all retries:', lastError);
+  console.error('Error details:', lastError.message);
+  console.error('The application cannot start without a database connection.');
+  console.error('Please check your database connection settings and ensure the database is accessible.');
   process.exit(1);
-});
+};
+
+// Start initialization
+initializeWithRetry();
 
