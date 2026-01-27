@@ -68,10 +68,14 @@ const init = async () => {
       // Connection pool settings
       max: 20, // Maximum number of clients in the pool
       idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-      connectionTimeoutMillis: 15000, // Return an error after 15 seconds if connection could not be established
+      connectionTimeoutMillis: 30000, // Return an error after 30 seconds if connection could not be established
       // Keep connections alive
       keepAlive: true,
-      keepAliveInitialDelayMillis: 10000
+      keepAliveInitialDelayMillis: 10000,
+      // Statement timeout (30 seconds)
+      statement_timeout: 30000,
+      // Query timeout
+      query_timeout: 30000
     });
     
     // Handle pool errors (log but don't crash)
@@ -82,14 +86,34 @@ const init = async () => {
     // Test connection with retry logic
     try {
       await retryWithBackoff(async () => {
-        const result = await pool.query('SELECT NOW()');
-        return result;
+        // Use a simple query with a timeout
+        const client = await pool.connect();
+        try {
+          const result = await client.query('SELECT NOW()');
+          client.release();
+          return result;
+        } catch (queryErr) {
+          client.release();
+          throw queryErr;
+        }
       }, 5, 2000); // 5 retries, starting with 2 second delay
       console.log('Connected to PostgreSQL database');
       db = pool;
     } catch (err) {
       console.error('PostgreSQL connection error after retries:', err);
       console.error('Error details:', err.message);
+      if (err.code) {
+        console.error('Error code:', err.code);
+      }
+      if (err.address) {
+        console.error('Connection address:', err.address);
+      }
+      // Clean up the pool on failure
+      try {
+        await pool.end();
+      } catch (endErr) {
+        console.error('Error closing pool:', endErr);
+      }
       throw err;
     }
     

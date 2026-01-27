@@ -54,11 +54,12 @@ if (fs.existsSync(buildIndexPath)) {
 }
 
 // Initialize database and start server with retry logic
-const initializeWithRetry = async (maxRetries = 5, delay = 5000) => {
+const initializeWithRetry = async (maxRetries = 10, delay = 10000) => {
   let lastError;
   
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
+      console.log(`Database initialization attempt ${attempt + 1}/${maxRetries}...`);
       await db.init();
       // Run migrations
       await runMigrations();
@@ -92,9 +93,15 @@ const initializeWithRetry = async (maxRetries = 5, delay = 5000) => {
     } catch (err) {
       lastError = err;
       if (attempt < maxRetries - 1) {
-        const retryDelay = delay * Math.pow(2, attempt);
+        const retryDelay = Math.min(delay * Math.pow(2, attempt), 60000); // Cap at 60 seconds
         console.error(`Database initialization attempt ${attempt + 1} failed:`, err.message);
-        console.log(`Retrying in ${retryDelay}ms... (attempt ${attempt + 2}/${maxRetries})`);
+        if (err.code) {
+          console.error(`Error code: ${err.code}`);
+        }
+        if (err.address) {
+          console.error(`Connection address: ${err.address}`);
+        }
+        console.log(`Retrying in ${Math.round(retryDelay / 1000)}s... (attempt ${attempt + 2}/${maxRetries})`);
         await new Promise(resolve => setTimeout(resolve, retryDelay));
       }
     }
@@ -103,8 +110,15 @@ const initializeWithRetry = async (maxRetries = 5, delay = 5000) => {
   // If we get here, all retries failed
   console.error('Failed to initialize database after all retries:', lastError);
   console.error('Error details:', lastError.message);
+  if (lastError.code) {
+    console.error('Error code:', lastError.code);
+  }
+  if (lastError.address) {
+    console.error('Connection address:', lastError.address);
+  }
   console.error('The application cannot start without a database connection.');
   console.error('Please check your database connection settings and ensure the database is accessible.');
+  console.error('This may be a temporary network issue. The service will restart and retry automatically.');
   process.exit(1);
 };
 
