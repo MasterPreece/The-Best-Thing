@@ -40,6 +40,44 @@ const runMigrations = async () => {
           console.error('Error creating index:', err);
         }
       }
+      
+      // Check if wikipedia_pageviews column exists in items table
+      try {
+        const pageviewsResult = await db.query(`
+          SELECT column_name 
+          FROM information_schema.columns 
+          WHERE table_name = 'items' AND column_name = 'wikipedia_pageviews'
+        `);
+        
+        if (pageviewsResult.rows.length === 0) {
+          console.log('Adding wikipedia_pageviews column to items table...');
+          try {
+            await db.query(`
+              ALTER TABLE items ADD COLUMN wikipedia_pageviews BIGINT DEFAULT NULL
+            `);
+            console.log('Successfully added wikipedia_pageviews column');
+            
+            // Create index
+            try {
+              await db.query(`
+                CREATE INDEX IF NOT EXISTS idx_items_wikipedia_pageviews ON items(wikipedia_pageviews DESC)
+              `);
+              console.log('Successfully created index on wikipedia_pageviews');
+            } catch (idxErr) {
+              console.error('Error creating index on wikipedia_pageviews:', idxErr);
+            }
+          } catch (err) {
+            // PostgreSQL error code 42701 is "duplicate_column"
+            if (err.code !== '42701' && !err.message.includes('duplicate')) {
+              console.error('Error adding wikipedia_pageviews column:', err);
+              throw err;
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error checking for wikipedia_pageviews column:', err);
+        // Don't throw - allow server to continue
+      }
     } catch (err) {
       console.error('Migration error:', err);
       throw err;
@@ -224,6 +262,41 @@ const runMigrations = async () => {
                 dbInstance.run(`
                   CREATE INDEX IF NOT EXISTS idx_items_category_id ON items(category_id)
                 `, () => {
+                  checkPageviewsColumn();
+                });
+              });
+            } else {
+              checkPageviewsColumn();
+            }
+          });
+        }
+        
+        function checkPageviewsColumn() {
+          dbInstance.all(`
+            PRAGMA table_info(items)
+          `, (err, columns) => {
+            if (err) {
+              console.error('Error checking items table info for pageviews:', err);
+              return resolve();
+            }
+            
+            const hasPageviews = columns.some(col => col.name === 'wikipedia_pageviews');
+            
+            if (!hasPageviews) {
+              console.log('Adding wikipedia_pageviews column to items table...');
+              dbInstance.run(`
+                ALTER TABLE items ADD COLUMN wikipedia_pageviews INTEGER DEFAULT NULL
+              `, (err) => {
+                if (err && !err.message.includes('duplicate column')) {
+                  console.error('Error adding wikipedia_pageviews column:', err);
+                } else {
+                  console.log('Successfully added wikipedia_pageviews column');
+                }
+                
+                // Create index
+                dbInstance.run(`
+                  CREATE INDEX IF NOT EXISTS idx_items_wikipedia_pageviews ON items(wikipedia_pageviews DESC)
+                `, () => {
                   resolve();
                 });
               });
@@ -232,6 +305,49 @@ const runMigrations = async () => {
             }
           });
         }
+      });
+    });
+  }
+  
+  // Migration: Add wikipedia_pageviews column to items table (separate migration)
+  if (dbType === 'postgres') {
+    // Already handled in the category migration block above
+  } else {
+    // SQLite: Add wikipedia_pageviews column (run separately to ensure it executes)
+    await new Promise((resolve) => {
+      dbInstance.serialize(() => {
+        dbInstance.all(`
+          PRAGMA table_info(items)
+        `, (err, columns) => {
+          if (err) {
+            console.error('Error checking items table info for pageviews migration:', err);
+            return resolve();
+          }
+          
+          const hasPageviews = columns.some(col => col.name === 'wikipedia_pageviews');
+          
+          if (!hasPageviews) {
+            console.log('Adding wikipedia_pageviews column to items table...');
+            dbInstance.run(`
+              ALTER TABLE items ADD COLUMN wikipedia_pageviews INTEGER DEFAULT NULL
+            `, (err) => {
+              if (err && !err.message.includes('duplicate column')) {
+                console.error('Error adding wikipedia_pageviews column:', err);
+              } else {
+                console.log('Successfully added wikipedia_pageviews column');
+              }
+              
+              // Create index
+              dbInstance.run(`
+                CREATE INDEX IF NOT EXISTS idx_items_wikipedia_pageviews ON items(wikipedia_pageviews DESC)
+              `, () => {
+                resolve();
+              });
+            });
+          } else {
+            resolve();
+          }
+        });
       });
     });
   }

@@ -173,6 +173,7 @@ const createTables = async () => {
           last_compared_at TIMESTAMP,
           first_seen_at TIMESTAMP,
           skip_count INTEGER DEFAULT 0,
+          wikipedia_pageviews BIGINT DEFAULT NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `);
@@ -283,6 +284,19 @@ const createTables = async () => {
       await client.query(`
         CREATE INDEX IF NOT EXISTS idx_comparisons_user_id ON comparisons(user_id)
       `);
+      
+      // Try to create wikipedia_pageviews index - column might not exist yet (handled by migrations)
+      try {
+        await client.query(`
+          CREATE INDEX IF NOT EXISTS idx_items_wikipedia_pageviews ON items(wikipedia_pageviews DESC)
+        `);
+      } catch (err) {
+        // Column doesn't exist yet - will be created by migrations
+        const errMsg = err.message || err.toString() || '';
+        if (err.code !== '42703' && !errMsg.toLowerCase().includes('does not exist')) {
+          console.error('Error creating idx_items_wikipedia_pageviews:', err);
+        }
+      }
 
       // Comments table - for discussions on items
       await client.query(`
@@ -406,6 +420,7 @@ const createTables = async () => {
             last_compared_at DATETIME,
             first_seen_at DATETIME,
             skip_count INTEGER DEFAULT 0,
+            wikipedia_pageviews INTEGER DEFAULT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
           )`, (err) => {
             if (err) {

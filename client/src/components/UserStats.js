@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import './UserStats.css';
 
 const UserStats = () => {
@@ -82,6 +82,14 @@ const UserStats = () => {
       <div className="stats-header">
         <h1>Your Statistics 📊</h1>
         <p className="stats-subtitle">Welcome back, {user?.username}!</p>
+        <div className="stats-header-actions">
+          <Link 
+            to={`/rankings/user/${encodeURIComponent(user?.username || '')}`}
+            className="view-rankings-button"
+          >
+            ⭐ View My Rankings
+          </Link>
+        </div>
       </div>
 
       <div className="stats-grid">

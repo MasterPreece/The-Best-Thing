@@ -105,6 +105,21 @@ const getSchedulerIntervalMinutes = async () => parseInt(await getSetting('sched
 const getItemsNeedingVotesConfidenceThreshold = async () => parseFloat(await getSetting('items_needing_votes_confidence_threshold', '0.8', parseFloat)) || 0.8;
 const getItemsNeedingVotesComparisonThreshold = async () => parseInt(await getSetting('items_needing_votes_comparison_threshold', '20', parseInt)) || 20;
 
+// Diversity Filtering Settings
+const getDiversityFilteringEnabled = async () => {
+  const value = await getSetting('diversity_filtering_enabled', 'true', (v) => v === 'true' || v === true);
+  return value === true || value === 'true';
+};
+const getDiversityPenaltyStrength = async () => parseFloat(await getSetting('diversity_penalty_strength', '0.8', parseFloat)) || 0.8;
+const getDiversityLookbackCount = async () => parseInt(await getSetting('diversity_lookback_count', '20', parseInt)) || 20;
+
+// Wikipedia Popularity Settings
+const getWikipediaPopularityEnabled = async () => {
+  const value = await getSetting('wikipedia_popularity_enabled', 'true', (v) => v === 'true' || v === true);
+  return value === true || value === 'true';
+};
+const getWikipediaPopularityStrength = async () => parseFloat(await getSetting('wikipedia_popularity_strength', '0.5', parseFloat)) || 0.5;
+
 module.exports = {
   invalidateSettingsCache,
   // ELO Rating System
@@ -134,6 +149,13 @@ module.exports = {
   getSchedulerIntervalMinutes,
   // Selection Algorithm
   getItemsNeedingVotesConfidenceThreshold,
-  getItemsNeedingVotesComparisonThreshold
+  getItemsNeedingVotesComparisonThreshold,
+  // Diversity Filtering
+  getDiversityFilteringEnabled,
+  getDiversityPenaltyStrength,
+  getDiversityLookbackCount,
+  // Wikipedia Popularity
+  getWikipediaPopularityEnabled,
+  getWikipediaPopularityStrength
 };
 

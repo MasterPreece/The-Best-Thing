@@ -24,6 +24,29 @@
   margin-bottom: 1rem;
 }
 
+.personal-rankings-link {
+  margin-top: 1rem;
+}
+
+.view-personal-rankings-link {
+  display: inline-block;
+  padding: 0.6rem 1.2rem;
+  background: rgba(102, 126, 234, 0.2);
+  border: 1px solid rgba(102, 126, 234, 0.4);
+  border-radius: 20px;
+  color: white;
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  font-size: 0.9rem;
+}
+
+.view-personal-rankings-link:hover {
+  background: rgba(102, 126, 234, 0.4);
+  border-color: rgba(102, 126, 234, 0.6);
+  transform: translateY(-2px);
+}
+
 .submit-item-button {
   padding: 0.75rem 1.5rem;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);

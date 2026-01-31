@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Comparison from './components/Comparison';
 import Rankings from './components/Rankings';
+import PersonalRankings from './components/PersonalRankings';
 import Leaderboard from './components/Leaderboard';
 import ItemDetail from './components/ItemDetail';
 import UserStats from './components/UserStats';
@@ -20,6 +21,9 @@ function MoreMenu({ showAuthModal, setShowAuthModal, setShowDonateModal, user, l
   const isActive = (path) => {
     if (path === '/') {
       return location.pathname === '/';
+    }
+    if (path === '/rankings/user') {
+      return location.pathname.startsWith('/rankings/user');
     }
     return location.pathname.startsWith(path);
   };
@@ -82,6 +86,14 @@ function MoreMenu({ showAuthModal, setShowAuthModal, setShowDonateModal, user, l
               >
                 <span className="more-menu-item-icon">📊</span>
                 <span className="more-menu-item-text">My Stats</span>
+              </Link>
+              <Link 
+                to={`/rankings/user/${encodeURIComponent(user?.username || '')}`}
+                className={`more-menu-item ${isActive('/rankings/user') ? 'active' : ''}`}
+                onClick={handleMenuItemClick}
+              >
+                <span className="more-menu-item-icon">⭐</span>
+                <span className="more-menu-item-text">My Rankings</span>
               </Link>
               <div className="more-menu-divider"></div>
             </>
@@ -178,6 +190,7 @@ function AppRoutes({ userSessionId, adminToken, setAdminToken }) {
       <Routes location={location} key={location.pathname}>
         <Route path="/" element={<Comparison userSessionId={userSessionId} />} />
         <Route path="/rankings" element={<Rankings />} />
+        <Route path="/rankings/user/:username" element={<PersonalRankings />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
         <Route path="/stats" element={<UserStats />} />
         <Route path="/items/:id" element={<ItemDetail />} />

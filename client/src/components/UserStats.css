@@ -22,6 +22,31 @@
   color: #b4b4b4;
 }
 
+.stats-header-actions {
+  margin-top: 1rem;
+  display: flex;
+  justify-content: center;
+}
+
+.view-rankings-button {
+  display: inline-block;
+  padding: 0.75rem 1.5rem;
+  background: rgba(102, 126, 234, 0.3);
+  border: 2px solid rgba(102, 126, 234, 0.5);
+  border-radius: 25px;
+  color: white;
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  font-size: 1rem;
+}
+
+.view-rankings-button:hover {
+  background: rgba(102, 126, 234, 0.5);
+  border-color: rgba(102, 126, 234, 0.7);
+  transform: translateY(-2px);
+}
+
 .stats-loading,
 .stats-error {
   text-align: center;

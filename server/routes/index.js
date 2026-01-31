@@ -52,6 +52,7 @@ router.get('/categories/:slug', categoriesController.getCategoryBySlug);
 
 // Items/Rankings
 router.get('/items/ranking', itemsController.getRankings);
+router.get('/rankings/user/:username', itemsController.getPersonalRankings);
 router.get('/items/trending', itemsController.getTrendingItems);
 router.get('/items/rising-falling', itemsController.getRisingFalling);
 router.get('/items/search', itemsController.searchItem);

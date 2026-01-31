@@ -6,6 +6,7 @@ const { updateFamiliarityMetrics } = require('../utils/familiarity-calculator');
 const { updateItemMetricsAfterVote } = require('../utils/item-metrics-updater');
 const { updateUserStatsInDatabase } = require('../utils/user-stats-calculator');
 const settings = require('../utils/settings');
+const { getSimilarityGroup, calculateDiversityPenalty } = require('../utils/similarity-detector');
 
 const getRandomComparison = async (req, res) => {
   const dbInstance = db.getDb();
@@ -133,16 +134,172 @@ const getRandomComparison = async (req, res) => {
             console.log(`[Recency] Found ${recencyMap.size} recently seen items for session: ${userSessionId}`);
             resolve(recencyMap);
           });
+            });
+          });
+        }
+  };
+  
+  // Helper function to get recently seen similarity groups
+  // Returns a map of similarity_group -> comparisons_ago (how many comparisons ago that group was seen)
+  const getRecentlySeenSimilarityGroups = async () => {
+    if (!userSessionId) {
+      return new Map(); // No session ID, return empty map
+    }
+    
+    const dbType = db.getDbType();
+    const recentLimit = 20; // Get last 20 comparisons for diversity calculation
+    const lookbackCount = await settings.getDiversityLookbackCount();
+    
+    if (dbType === 'postgres') {
+      try {
+        const result = await db.query(`
+          WITH recent_comparisons AS (
+            SELECT id, created_at
+            FROM comparisons
+            WHERE user_session_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2
+          ),
+          recent_items AS (
+            SELECT item1_id as item_id, id as comparison_id
+            FROM comparisons
+            WHERE id IN (SELECT id FROM recent_comparisons)
+            UNION ALL
+            SELECT item2_id as item_id, id as comparison_id
+            FROM comparisons
+            WHERE id IN (SELECT id FROM recent_comparisons)
+          ),
+          items_with_titles AS (
+            SELECT DISTINCT ri.item_id, ri.comparison_id, i.title
+            FROM recent_items ri
+            JOIN items i ON ri.item_id = i.id
+            WHERE ri.item_id IS NOT NULL
+          ),
+          ranked_groups AS (
+            SELECT 
+              iwt.title,
+              iwt.comparison_id,
+              ROW_NUMBER() OVER (ORDER BY iwt.comparison_id DESC) as comparisons_ago
+            FROM items_with_titles iwt
+          )
+          SELECT title, MIN(comparisons_ago) as comparisons_ago
+          FROM ranked_groups
+          GROUP BY title
+        `, [userSessionId, recentLimit]);
+        
+        const groupMap = new Map();
+        for (const row of result.rows) {
+          const similarityGroup = getSimilarityGroup(row.title);
+          if (similarityGroup) {
+            const comparisonsAgo = parseInt(row.comparisons_ago);
+            const currentAgo = groupMap.get(similarityGroup);
+            if (!currentAgo || comparisonsAgo < currentAgo) {
+              groupMap.set(similarityGroup, comparisonsAgo);
+            }
+          }
+        }
+        
+        return groupMap;
+      } catch (err) {
+        console.error('Error fetching recently seen similarity groups (PostgreSQL):', err);
+        return new Map();
+      }
+    } else {
+      // SQLite version
+      return new Promise((resolve) => {
+        dbInstance.all(`
+          SELECT c.id, c.created_at
+          FROM comparisons c
+          WHERE c.user_session_id = ?
+          ORDER BY c.created_at DESC
+          LIMIT ?
+        `, [userSessionId, recentLimit], (err, recentComparisons) => {
+          if (err || !recentComparisons || recentComparisons.length === 0) {
+            resolve(new Map());
+            return;
+          }
+          
+          const comparisonIds = recentComparisons.map(c => c.id);
+          const placeholders = comparisonIds.map(() => '?').join(',');
+          
+          dbInstance.all(`
+            SELECT DISTINCT i.id, i.title, c.id as comparison_id
+            FROM comparisons c
+            JOIN items i ON (c.item1_id = i.id OR c.item2_id = i.id)
+            WHERE c.id IN (${placeholders})
+            ORDER BY c.id DESC
+          `, comparisonIds, (err2, items) => {
+            if (err2) {
+              console.error('Error fetching items for similarity groups:', err2);
+              resolve(new Map());
+              return;
+            }
+            
+            const groupMap = new Map();
+            const itemToRank = new Map();
+            
+            // Number the comparisons (1 = most recent)
+            recentComparisons.forEach((comp, index) => {
+              itemToRank.set(comp.id, index + 1);
+            });
+            
+            // For each item, find its similarity group and most recent appearance
+            (items || []).forEach(item => {
+              if (item.title) {
+                const similarityGroup = getSimilarityGroup(item.title);
+                if (similarityGroup) {
+                  const rank = itemToRank.get(item.comparison_id);
+                  if (rank) {
+                    const currentRank = groupMap.get(similarityGroup);
+                    if (!currentRank || rank < currentRank) {
+                      groupMap.set(similarityGroup, rank);
+                    }
+                  }
+                }
+              }
+            });
+            
+            resolve(groupMap);
+          });
         });
       });
     }
   };
   
+  // Helper function to calculate popularity bonus based on Wikipedia pageviews
+  const calculatePopularityBonus = (pageviews, percentile50, percentile75, percentile90, strength) => {
+    if (!pageviews || pageviews === null || pageviews === 0) {
+      return 1.0; // No bonus if no pageviews data
+    }
+    
+    let baseBonus = 1.0;
+    
+    // Calculate bonus based on percentile thresholds
+    if (percentile90 && pageviews >= percentile90) {
+      baseBonus = 3.0; // Top 10%: 3x bonus
+    } else if (percentile75 && pageviews >= percentile75) {
+      baseBonus = 2.0; // Top 25%: 2x bonus
+    } else if (percentile50 && pageviews >= percentile50) {
+      baseBonus = 1.5; // Top 50%: 1.5x bonus
+    }
+    
+    // Apply strength multiplier (0.0-1.0)
+    // If strength is 0.5, then 3.0 becomes 2.0 (3.0 - 1.0) * 0.5 + 1.0
+    const adjustedBonus = 1.0 + (baseBonus - 1.0) * strength;
+    
+    return adjustedBonus;
+  };
+
   // Main weighted random selection function
-  // Uses vote count weights and recency decay in a single query
+  // Uses vote count weights, ELO bonus, recency decay, diversity penalty, and popularity bonus
   const getWeightedRandomItems = async () => {
     const dbType = db.getDbType();
     const recentlySeen = await getRecentlySeenItems();
+    const diversityEnabled = await settings.getDiversityFilteringEnabled();
+    const recentlySeenGroups = diversityEnabled ? await getRecentlySeenSimilarityGroups() : new Map();
+    const penaltyStrength = await settings.getDiversityPenaltyStrength();
+    const popularityEnabled = await settings.getWikipediaPopularityEnabled();
+    const popularityStrength = await settings.getWikipediaPopularityStrength();
     
     if (dbType === 'postgres') {
       // Build recency decay values as a CTE
@@ -171,20 +328,39 @@ const getRandomComparison = async (req, res) => {
         ? `COALESCE(rd.decay, 1.0)`
         : `1.0`;
       
+      // Calculate 80th percentile ELO threshold (top 20% cutoff) in a CTE
+      const eloThresholdCTE = `elo_threshold AS (
+        SELECT PERCENTILE_CONT(0.8) WITHIN GROUP (ORDER BY elo_rating) as threshold
+        FROM items
+        WHERE image_url IS NOT NULL AND image_url != '' AND image_url != 'null' 
+          AND image_url NOT LIKE '%placeholder.com%'
+      )`;
+      
+      // Combine CTEs properly
+      const allCTEs = recencyCTE
+        ? `WITH ${eloThresholdCTE}, ${recencyCTE.replace('WITH ', '')}`
+        : `WITH ${eloThresholdCTE}`;
+      
       return db.query(`
-        ${recencyCTE}
+        ${allCTEs}
         SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
                i.familiarity_score, i.rating_confidence,
                c.id as category_id, c.name as category_name, c.slug as category_slug,
                COALESCE(comment_stats.comment_count, 0) as comment_count,
                CASE 
-                 WHEN i.comparison_count = 0 THEN 1000.0
+                 WHEN i.comparison_count = 0 THEN 500.0
                  WHEN i.comparison_count BETWEEN 1 AND 5 THEN 100.0
                  WHEN i.comparison_count BETWEEN 6 AND 20 THEN 10.0
                  ELSE 1.0
                END as vote_weight,
-               ${recencySelect} as recency_decay
+               ${recencySelect} as recency_decay,
+               CASE 
+                 WHEN i.elo_rating >= et.threshold 
+                 THEN LEAST(1.0 + GREATEST((i.elo_rating - et.threshold) / 500.0, 0), 5.0)
+                 ELSE 1.0
+               END as elo_bonus
         FROM items i
+        CROSS JOIN elo_threshold et
         LEFT JOIN categories c ON i.category_id = c.id
         LEFT JOIN (
           SELECT item_id, COUNT(*) as comment_count 
@@ -196,14 +372,76 @@ const getRandomComparison = async (req, res) => {
           AND i.image_url NOT LIKE '%placeholder.com%'
         ORDER BY (
           (CASE 
-            WHEN i.comparison_count = 0 THEN 1000.0
+            WHEN i.comparison_count = 0 THEN 500.0
             WHEN i.comparison_count BETWEEN 1 AND 5 THEN 100.0
             WHEN i.comparison_count BETWEEN 6 AND 20 THEN 10.0
             ELSE 1.0
-          END) * ${recencySelect}
+          END) * 
+          (CASE 
+            WHEN i.elo_rating >= et.threshold 
+            THEN LEAST(1.0 + GREATEST((i.elo_rating - et.threshold) / 500.0, 0), 5.0)
+            ELSE 1.0
+          END) * 
+          ${recencySelect}
         ) * RANDOM() DESC
-        LIMIT 20
-      `).then(result => {
+        LIMIT 50
+      `).then(async (result) => {
+        if (!result || !result.rows || result.rows.length < 2) {
+          console.error('[WeightedRandom] Not enough items with images in database. Found:', result?.rows?.length || 0);
+          return res.status(404).json({ 
+            error: 'Not enough items with images in database',
+            message: 'Please ensure there are at least 2 items with valid images (not placeholders)'
+          });
+        }
+        
+        // Apply diversity penalty and popularity bonus if enabled
+        let itemsWithDiversity = result.rows;
+        if (diversityEnabled && recentlySeenGroups.size > 0) {
+          itemsWithDiversity = result.rows.map(item => {
+            const similarityGroup = getSimilarityGroup(item.title);
+            let diversityPenalty = 1.0;
+            
+            if (similarityGroup) {
+              const comparisonsAgo = recentlySeenGroups.get(similarityGroup);
+              diversityPenalty = calculateDiversityPenalty(comparisonsAgo, penaltyStrength);
+            }
+            
+            // Calculate final weight with diversity penalty and popularity bonus
+            const voteWeight = item.vote_weight || 1.0;
+            const eloBonus = item.elo_bonus || 1.0;
+            const recencyDecay = item.recency_decay || 1.0;
+            const popularityBonus = item.popularity_bonus || 1.0;
+            const finalWeight = voteWeight * eloBonus * recencyDecay * diversityPenalty * popularityBonus;
+            
+            return {
+              ...item,
+              similarityGroup,
+              diversityPenalty,
+              finalWeight
+            };
+          });
+          
+          // Re-sort by final weight and take top 20
+          itemsWithDiversity.sort((a, b) => {
+            const weightDiff = (b.finalWeight || 0) - (a.finalWeight || 0);
+            if (Math.abs(weightDiff) < 0.1) {
+              return Math.random() - 0.5; // Randomize if weights are very close
+            }
+            return weightDiff;
+          });
+          itemsWithDiversity = itemsWithDiversity.slice(0, 20);
+        }
+        
+        const shuffled = itemsWithDiversity.sort(() => Math.random() - 0.5);
+        let item1 = shuffled[0];
+        let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+        if (item1.id === item2.id && shuffled.length > 1) {
+          item2 = shuffled[1];
+        }
+        
+        console.log(`[WeightedRandom] Selected items: ${item1.title} (${item1.comparison_count} votes, weight: ${item1.vote_weight}, elo_bonus: ${item1.elo_bonus}, popularity: ${item1.popularity_bonus || 1.0}, decay: ${item1.recency_decay}${item1.diversityPenalty !== undefined ? `, diversity: ${item1.diversityPenalty}` : ''}) vs ${item2.title} (${item2.comparison_count} votes, weight: ${item2.vote_weight}, elo_bonus: ${item2.elo_bonus}, popularity: ${item2.popularity_bonus || 1.0}, decay: ${item2.recency_decay}${item2.diversityPenalty !== undefined ? `, diversity: ${item2.diversityPenalty}` : ''})`);
+        res.json({ item1, item2 });
+      }).catch(err => {
         if (!result || !result.rows || result.rows.length < 2) {
           console.error('[WeightedRandom] Not enough items with images in database. Found:', result?.rows?.length || 0);
           return res.status(404).json({ 
@@ -219,18 +457,18 @@ const getRandomComparison = async (req, res) => {
             item2 = shuffled[1];
         }
         
-        console.log(`[WeightedRandom] Selected items: ${item1.title} (${item1.comparison_count} votes, weight: ${item1.vote_weight}, decay: ${item1.recency_decay}) vs ${item2.title} (${item2.comparison_count} votes, weight: ${item2.vote_weight}, decay: ${item2.recency_decay})`);
+        console.log(`[WeightedRandom] Selected items: ${item1.title} (${item1.comparison_count} votes, weight: ${item1.vote_weight}, elo_bonus: ${item1.elo_bonus}, decay: ${item1.recency_decay}) vs ${item2.title} (${item2.comparison_count} votes, weight: ${item2.vote_weight}, elo_bonus: ${item2.elo_bonus}, decay: ${item2.recency_decay})`);
         res.json({ item1, item2 });
       }).catch(err => {
         console.error('[WeightedRandom] Error in PostgreSQL weighted random selection:', err);
         console.error('[WeightedRandom] Error details:', err.message, err.stack);
         // Try fallback: get any items with images, even if fewer than 2
-        return db.query(`
+      return db.query(`
           SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
-                 c.id as category_id, c.name as category_name, c.slug as category_slug,
+               c.id as category_id, c.name as category_name, c.slug as category_slug,
                  COALESCE(comment_stats.comment_count, 0) as comment_count
-          FROM items i
-          LEFT JOIN categories c ON i.category_id = c.id
+        FROM items i
+        LEFT JOIN categories c ON i.category_id = c.id
           LEFT JOIN (
             SELECT item_id, COUNT(*) as comment_count 
             FROM comments 
@@ -241,7 +479,7 @@ const getRandomComparison = async (req, res) => {
             AND i.image_url != 'null' 
             AND i.image_url NOT LIKE '%placeholder.com%'
           ORDER BY RANDOM()
-          LIMIT 20
+        LIMIT 20
         `).then(fallbackResult => {
           if (!fallbackResult || !fallbackResult.rows || fallbackResult.rows.length < 2) {
             return res.status(404).json({ 
@@ -266,17 +504,35 @@ const getRandomComparison = async (req, res) => {
         });
       });
     } else {
-      // SQLite version - use JavaScript to calculate weights and decay
-      // Process items with weights and recency decay
-      const processItems = (rows, recencyMap) => {
+      // SQLite version - use JavaScript to calculate weights, ELO bonus, recency decay, and diversity penalty
+      // Process items with weights, ELO bonus, recency decay, and diversity penalty
+      const processItems = async (rows, recencyMap) => {
+          // Calculate 80th percentile ELO threshold (top 20% cutoff)
+          const eloRatings = rows
+            .map(item => item.elo_rating || 1500)
+            .sort((a, b) => a - b);
+          const percentileIndex = Math.floor(eloRatings.length * 0.8);
+          const eloThreshold = eloRatings[percentileIndex] || 1500;
           
-          // Calculate weights and apply recency decay
+          // Get diversity penalty settings
+          const diversityEnabled = await settings.getDiversityFilteringEnabled();
+          const penaltyStrength = await settings.getDiversityPenaltyStrength();
+          const recentlySeenGroups = diversityEnabled ? await getRecentlySeenSimilarityGroups() : new Map();
+          
+          // Calculate weights, ELO bonus, recency decay, and diversity penalty
           const weightedItems = rows.map(item => {
             let voteWeight = 1.0;
             const comparisonCount = item.comparison_count || 0;
-            if (comparisonCount === 0) voteWeight = 1000.0;
+            if (comparisonCount === 0) voteWeight = 500.0;
             else if (comparisonCount >= 1 && comparisonCount <= 5) voteWeight = 100.0;
             else if (comparisonCount >= 6 && comparisonCount <= 20) voteWeight = 10.0;
+            
+            // Calculate ELO bonus (1x to 5x multiplier for top 20%)
+            const eloRating = item.elo_rating || 1500;
+            let eloBonus = 1.0;
+            if (eloRating >= eloThreshold) {
+              eloBonus = Math.min(1.0 + ((eloRating - eloThreshold) / 500.0), 5.0);
+            }
             
             let recencyDecay = 1.0;
             const comparisonsAgo = recencyMap.get(item.id);
@@ -287,8 +543,54 @@ const getRandomComparison = async (req, res) => {
               else if (comparisonsAgo <= 30) recencyDecay = 0.7;
             }
             
-            const finalWeight = voteWeight * recencyDecay;
-            return { ...item, voteWeight, recencyDecay, finalWeight };
+            // Calculate diversity penalty
+            let diversityPenalty = 1.0;
+            if (diversityEnabled && recentlySeenGroups.size > 0) {
+              const similarityGroup = getSimilarityGroup(item.title);
+              if (similarityGroup) {
+                const groupComparisonsAgo = recentlySeenGroups.get(similarityGroup);
+                diversityPenalty = calculateDiversityPenalty(groupComparisonsAgo, penaltyStrength);
+              }
+            }
+            
+            // Calculate popularity bonus
+            let popularityBonus = 1.0;
+            if (popularityEnabled && rows.length > 0) {
+              // Calculate percentiles from all items with pageviews
+              const itemsWithPageviews = rows
+                .filter(r => r.wikipedia_pageviews && r.wikipedia_pageviews > 0)
+                .map(r => r.wikipedia_pageviews)
+                .sort((a, b) => a - b);
+              
+              if (itemsWithPageviews.length > 0) {
+                const p50 = itemsWithPageviews[Math.floor(itemsWithPageviews.length * 0.5)];
+                const p75 = itemsWithPageviews[Math.floor(itemsWithPageviews.length * 0.75)];
+                const p90 = itemsWithPageviews[Math.floor(itemsWithPageviews.length * 0.9)];
+                
+                const pageviews = item.wikipedia_pageviews || 0;
+                if (pageviews > 0) {
+                  if (p90 && pageviews >= p90) {
+                    popularityBonus = 1.0 + (3.0 - 1.0) * popularityStrength;
+                  } else if (p75 && pageviews >= p75) {
+                    popularityBonus = 1.0 + (2.0 - 1.0) * popularityStrength;
+                  } else if (p50 && pageviews >= p50) {
+                    popularityBonus = 1.0 + (1.5 - 1.0) * popularityStrength;
+                  }
+                }
+              }
+            }
+            
+            const finalWeight = voteWeight * eloBonus * recencyDecay * diversityPenalty * popularityBonus;
+            return { 
+              ...item, 
+              voteWeight, 
+              eloBonus, 
+              recencyDecay, 
+              diversityPenalty,
+              popularityBonus,
+              similarityGroup: diversityEnabled ? getSimilarityGroup(item.title) : null,
+              finalWeight 
+            };
           });
           
           // Sort by final weight and randomize
@@ -309,19 +611,19 @@ const getRandomComparison = async (req, res) => {
             item2 = topItems[1];
           }
           
-          console.log(`[WeightedRandom] Selected items: ${item1.title} (${item1.comparison_count || 0} votes, weight: ${item1.voteWeight}, decay: ${item1.recencyDecay}) vs ${item2.title} (${item2.comparison_count || 0} votes, weight: ${item2.voteWeight}, decay: ${item2.recencyDecay})`);
+          console.log(`[WeightedRandom] Selected items: ${item1.title} (${item1.comparison_count || 0} votes, weight: ${item1.voteWeight}, elo_bonus: ${item1.eloBonus}, popularity: ${item1.popularityBonus || 1.0}, decay: ${item1.recencyDecay}${item1.diversityPenalty !== undefined ? `, diversity: ${item1.diversityPenalty}` : ''}) vs ${item2.title} (${item2.comparison_count || 0} votes, weight: ${item2.voteWeight}, elo_bonus: ${item2.eloBonus}, popularity: ${item2.popularityBonus || 1.0}, decay: ${item2.recencyDecay}${item2.diversityPenalty !== undefined ? `, diversity: ${item2.diversityPenalty}` : ''})`);
           res.json({ item1, item2 });
         };
       
       // Try with categories and extra columns first, fallback to simple query if columns don't exist
       return new Promise((resolve, reject) => {
-        dbInstance.all(`
+    dbInstance.all(`
           SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
-                 i.familiarity_score, i.rating_confidence,
+                 i.familiarity_score, i.rating_confidence, i.wikipedia_pageviews,
                  c.id as category_id, c.name as category_name, c.slug as category_slug,
                  COALESCE(comment_stats.comment_count, 0) as comment_count
-          FROM items i
-          LEFT JOIN categories c ON i.category_id = c.id
+      FROM items i
+      LEFT JOIN categories c ON i.category_id = c.id
           LEFT JOIN (
             SELECT item_id, COUNT(*) as comment_count 
             FROM comments 
@@ -329,16 +631,16 @@ const getRandomComparison = async (req, res) => {
           ) comment_stats ON i.id = comment_stats.item_id
           WHERE i.image_url IS NOT NULL AND i.image_url != '' AND i.image_url != 'null' 
             AND i.image_url NOT LIKE '%placeholder.com%'
-          ORDER BY RANDOM()
+      ORDER BY RANDOM()
           LIMIT 100
-        `, (err, rows) => {
+    `, async (err, rows) => {
       if (err) {
             // If columns don't exist, try simpler query
         const errorStr = err.message || err.toString() || '';
             if (errorStr.includes('familiarity_score') || errorStr.includes('rating_confidence') || 
                 errorStr.includes('no such column') || errorStr.includes('category')) {
               console.log('[WeightedRandom] Columns not available, using simple query');
-              return dbInstance.all(`
+          return dbInstance.all(`
                 SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
                        COALESCE(comment_stats.comment_count, 0) as comment_count
                 FROM items i
@@ -349,14 +651,19 @@ const getRandomComparison = async (req, res) => {
                 ) comment_stats ON i.id = comment_stats.item_id
                 WHERE image_url IS NOT NULL AND image_url != '' AND image_url != 'null' 
                   AND image_url NOT LIKE '%placeholder.com%'
-                ORDER BY RANDOM()
+            ORDER BY RANDOM()
                 LIMIT 100
-              `, (simpleErr, simpleRows) => {
+              `, async (simpleErr, simpleRows) => {
                 if (simpleErr) {
                   console.error('Error fetching items for weighted selection:', simpleErr);
               return res.status(500).json({ error: 'Failed to fetch comparison' });
             }
-                processItems(simpleRows, recentlySeen);
+                processItems(simpleRows, recentlySeen).then(() => {
+                  // Items processed and response sent
+                }).catch(err => {
+                  console.error('Error in processItems:', err);
+                  return res.status(500).json({ error: 'Failed to fetch comparison' });
+                });
               });
             }
             console.error('Error fetching items for weighted selection:', err);
@@ -371,7 +678,12 @@ const getRandomComparison = async (req, res) => {
             });
           }
           
-          processItems(rows, recentlySeen);
+          processItems(rows, recentlySeen).then(() => {
+            // Items processed and response sent
+          }).catch(err => {
+            console.error('Error in processItems:', err);
+            return res.status(500).json({ error: 'Failed to fetch comparison' });
+          });
         });
       });
     }

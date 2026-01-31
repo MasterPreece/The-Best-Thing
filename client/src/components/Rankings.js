@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
+import { useAuth } from '../contexts/AuthContext';
 import { RankingSkeleton } from './SkeletonLoader';
 import ItemSubmissionModal from './ItemSubmissionModal';
 import RisingFallingSidebar from './RisingFallingSidebar';
@@ -8,6 +9,7 @@ import CommentsModal from './CommentsModal';
 import './Rankings.css';
 
 const Rankings = () => {
+  const { user, isAuthenticated } = useAuth();
   const [rankings, setRankings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [limit, setLimit] = useState(100);
@@ -137,6 +139,16 @@ const Rankings = () => {
         <div className="header-content">
           <h1>🏆 The Best Things Ranking</h1>
           <p>Based on community votes using Elo rating system</p>
+          {isAuthenticated && user?.username && (
+            <div className="personal-rankings-link">
+              <Link 
+                to={`/rankings/user/${encodeURIComponent(user.username)}`}
+                className="view-personal-rankings-link"
+              >
+                ⭐ View My Personal Rankings
+              </Link>
+            </div>
+          )}
         </div>
         
         <div className="search-container">

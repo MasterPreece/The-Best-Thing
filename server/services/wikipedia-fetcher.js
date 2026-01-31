@@ -456,13 +456,26 @@ const fetchPageInfo = async (title) => {
       imageSource = 'placeholder';
     }
     
+    // Fetch pageviews for this article
+    let pageviews = null;
+    try {
+      const articlesWithViews = await getArticlesWithPageviews([page.title]);
+      if (articlesWithViews.length > 0 && articlesWithViews[0].views) {
+        pageviews = articlesWithViews[0].views;
+      }
+    } catch (pageviewsError) {
+      // Silently fail - pageviews are optional
+      console.error(`Error fetching pageviews for ${title}:`, pageviewsError.message);
+    }
+    
     return {
       wikipediaId,
       title: page.title,
       imageUrl,
       description: page.extract?.substring(0, 500) || '',
       hasImage: !!imageUrl,
-      imageSource // Track where the image came from for debugging
+      imageSource, // Track where the image came from for debugging
+      pageviews // Add pageviews to the returned data
     };
   } catch (error) {
     if (error.response?.status === 403) {
@@ -639,21 +652,45 @@ const fetchMoreItems = async (currentCount = 0, usePopular = true, batchSizePara
           }
           
           // Insert into database (ignore if constraint violated)
+          // Try with wikipedia_pageviews first, fallback if column doesn't exist
           dbInstance.run(`
-            INSERT OR IGNORE INTO items (wikipedia_id, title, image_url, description)
-            VALUES (?, ?, ?, ?)
-          `, [pageInfo.wikipediaId, pageInfo.title, pageInfo.imageUrl, pageInfo.description], function(insertErr) {
+            INSERT OR IGNORE INTO items (wikipedia_id, title, image_url, description, wikipedia_pageviews)
+            VALUES (?, ?, ?, ?, ?)
+          `, [pageInfo.wikipediaId, pageInfo.title, pageInfo.imageUrl, pageInfo.description, pageInfo.pageviews || null], function(insertErr) {
             if (insertErr) {
-              console.error(`Error inserting ${pageInfo.title}:`, insertErr);
-              skipped++;
+              const errorStr = insertErr.message || insertErr.toString() || '';
+              // If wikipedia_pageviews column doesn't exist, try without it
+              if (errorStr.includes('wikipedia_pageviews') || errorStr.includes('no such column')) {
+                dbInstance.run(`
+                  INSERT OR IGNORE INTO items (wikipedia_id, title, image_url, description)
+                  VALUES (?, ?, ?, ?)
+                `, [pageInfo.wikipediaId, pageInfo.title, pageInfo.imageUrl, pageInfo.description], function(retryErr) {
+                  if (retryErr) {
+                    console.error(`Error inserting ${pageInfo.title}:`, retryErr);
+                    skipped++;
+                  } else if (this.changes > 0) {
+                    inserted++;
+                    const imageStatus = pageInfo.hasImage ? '📷' : '❌';
+                    console.log(`${imageStatus} Added: ${pageInfo.title}${pageInfo.hasImage ? '' : ' (no image)'}`);
+                  } else {
+                    skipped++;
+                  }
+                  resolve();
+                });
+              } else {
+                console.error(`Error inserting ${pageInfo.title}:`, insertErr);
+                skipped++;
+                resolve();
+              }
             } else if (this.changes > 0) {
               inserted++;
               const imageStatus = pageInfo.hasImage ? '📷' : '❌';
               console.log(`${imageStatus} Added: ${pageInfo.title}${pageInfo.hasImage ? '' : ' (no image)'}`);
+              resolve();
             } else {
               skipped++;
+              resolve();
             }
-            resolve();
           });
         });
       });
@@ -750,20 +787,43 @@ const fetchPopularItemsOnly = async (count = 10) => {
           }
           
           // Insert into database (ignore if constraint violated)
+          // Try with wikipedia_pageviews first, fallback if column doesn't exist
           dbInstance.run(`
-            INSERT OR IGNORE INTO items (wikipedia_id, title, image_url, description)
-            VALUES (?, ?, ?, ?)
-          `, [pageInfo.wikipediaId, pageInfo.title, pageInfo.imageUrl, pageInfo.description], function(insertErr) {
+            INSERT OR IGNORE INTO items (wikipedia_id, title, image_url, description, wikipedia_pageviews)
+            VALUES (?, ?, ?, ?, ?)
+          `, [pageInfo.wikipediaId, pageInfo.title, pageInfo.imageUrl, pageInfo.description, pageInfo.pageviews || null], function(insertErr) {
             if (insertErr) {
-              console.error(`Error inserting ${pageInfo.title}:`, insertErr);
-              skipped++;
+              const errorStr = insertErr.message || insertErr.toString() || '';
+              // If wikipedia_pageviews column doesn't exist, try without it
+              if (errorStr.includes('wikipedia_pageviews') || errorStr.includes('no such column')) {
+                dbInstance.run(`
+                  INSERT OR IGNORE INTO items (wikipedia_id, title, image_url, description)
+                  VALUES (?, ?, ?, ?)
+                `, [pageInfo.wikipediaId, pageInfo.title, pageInfo.imageUrl, pageInfo.description], function(retryErr) {
+                  if (retryErr) {
+                    console.error(`Error inserting ${pageInfo.title}:`, retryErr);
+                    skipped++;
+                  } else if (this.changes > 0) {
+                    inserted++;
+                    console.log(`Added: ${pageInfo.title}`);
+                  } else {
+                    skipped++;
+                  }
+                  resolve();
+                });
+              } else {
+                console.error(`Error inserting ${pageInfo.title}:`, insertErr);
+                skipped++;
+                resolve();
+              }
             } else if (this.changes > 0) {
               inserted++;
               console.log(`Added: ${pageInfo.title}`);
+              resolve();
             } else {
               skipped++;
+              resolve();
             }
-            resolve();
           });
         });
       });

@@ -188,6 +188,189 @@ const getRankings = async (req, res) => {
 };
 
 /**
+ * Get personal rankings for a user based on their voting history
+ */
+const getPersonalRankings = async (req, res) => {
+  try {
+    const { username } = req.params;
+    
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+    
+    const dbInstance = db.getDb();
+    const dbType = db.getDbType();
+    
+    // First, get the user ID from username
+    let userId;
+    if (dbType === 'postgres') {
+      const userResult = await dbInstance.query(
+        'SELECT id FROM users WHERE username = $1',
+        [username]
+      );
+      if (!userResult.rows || userResult.rows.length === 0) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      userId = userResult.rows[0].id;
+    } else {
+      userId = await new Promise((resolve, reject) => {
+        dbInstance.get(
+          'SELECT id FROM users WHERE username = ?',
+          [username],
+          (err, row) => {
+            if (err) {
+              reject(err);
+            } else if (!row) {
+              reject(new Error('User not found'));
+            } else {
+              resolve(row.id);
+            }
+          }
+        );
+      });
+    }
+    
+    // Get personal rankings based on user's votes
+    // For each item the user has voted on:
+    // - Count total appearances (as item1 or item2)
+    // - Count wins (where user voted for this item as winner)
+    // - Calculate win rate
+    
+    if (dbType === 'postgres') {
+      const rankings = await dbInstance.query(`
+        WITH user_comparisons AS (
+          SELECT item1_id, item2_id, winner_id
+          FROM comparisons
+          WHERE user_id = $1
+        ),
+        item_appearances AS (
+          SELECT item1_id as item_id, winner_id
+          FROM user_comparisons
+          UNION ALL
+          SELECT item2_id as item_id, winner_id
+          FROM user_comparisons
+        ),
+        item_stats AS (
+          SELECT 
+            item_id,
+            COUNT(*) as total_appearances,
+            COUNT(*) FILTER (WHERE winner_id = item_id) as wins
+          FROM item_appearances
+          WHERE item_id IS NOT NULL
+          GROUP BY item_id
+        )
+        SELECT 
+          i.id,
+          i.title,
+          i.image_url,
+          i.description,
+          i.elo_rating,
+          i.comparison_count,
+          i.wins as global_wins,
+          i.losses as global_losses,
+          COALESCE(comment_stats.comment_count, 0) as comment_count,
+          COALESCE(its.wins, 0) as personal_wins,
+          COALESCE(its.total_appearances, 0) as personal_total,
+          CASE 
+            WHEN COALESCE(its.total_appearances, 0) > 0 
+            THEN ROUND((COALESCE(its.wins, 0)::numeric / its.total_appearances::numeric) * 100, 2)
+            ELSE 0 
+          END as personal_score
+        FROM items i
+        INNER JOIN item_stats its ON i.id = its.item_id
+        LEFT JOIN (
+          SELECT item_id, COUNT(*) as comment_count 
+          FROM comments 
+          GROUP BY item_id
+        ) comment_stats ON i.id = comment_stats.item_id
+        ORDER BY personal_score DESC, personal_total DESC
+        LIMIT 1000
+      `, [userId]);
+      
+      return res.json({
+        rankings: rankings.rows,
+        username,
+        userId,
+        total: rankings.rows.length
+      });
+    } else {
+      // SQLite version - use SUM instead of FILTER, avoid reserved keyword 'is'
+      const rankings = await new Promise((resolve, reject) => {
+        dbInstance.all(`
+          WITH user_comparisons AS (
+            SELECT item1_id, item2_id, winner_id
+            FROM comparisons
+            WHERE user_id = ?
+          ),
+          item_appearances AS (
+            SELECT item1_id as item_id, winner_id
+            FROM user_comparisons
+            UNION ALL
+            SELECT item2_id as item_id, winner_id
+            FROM user_comparisons
+          ),
+          item_stats AS (
+            SELECT 
+              item_id,
+              COUNT(*) as total_appearances,
+              SUM(CASE WHEN winner_id = item_id THEN 1 ELSE 0 END) as wins
+            FROM item_appearances
+            WHERE item_id IS NOT NULL
+            GROUP BY item_id
+          )
+          SELECT 
+            i.id,
+            i.title,
+            i.image_url,
+            i.description,
+            i.elo_rating,
+            i.comparison_count,
+            i.wins as global_wins,
+            i.losses as global_losses,
+            COALESCE(comment_stats.comment_count, 0) as comment_count,
+            COALESCE(its.wins, 0) as personal_wins,
+            COALESCE(its.total_appearances, 0) as personal_total,
+            CASE 
+              WHEN COALESCE(its.total_appearances, 0) > 0 
+              THEN ROUND((COALESCE(its.wins, 0) * 100.0 / its.total_appearances), 2)
+              ELSE 0 
+            END as personal_score
+          FROM items i
+          INNER JOIN item_stats its ON i.id = its.item_id
+          LEFT JOIN (
+            SELECT item_id, COUNT(*) as comment_count 
+            FROM comments 
+            GROUP BY item_id
+          ) comment_stats ON i.id = comment_stats.item_id
+          ORDER BY personal_score DESC, personal_total DESC
+          LIMIT 1000
+        `, [userId], (err, rows) => {
+          if (err) {
+            console.error('Error fetching personal rankings (SQLite):', err);
+            reject(err);
+          } else {
+            resolve(rows || []);
+          }
+        });
+      });
+      
+      return res.json({
+        rankings,
+        username,
+        userId,
+        total: rankings.length
+      });
+    }
+  } catch (error) {
+    console.error('Error fetching personal rankings:', error);
+    if (error.message === 'User not found') {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.status(500).json({ error: 'Failed to fetch personal rankings' });
+  }
+};
+
+/**
  * Search for an item and return its ranking
  */
 const searchItem = async (req, res) => {
@@ -705,6 +888,7 @@ const getItemStats = async (req, res) => {
 
 module.exports = {
   getRankings,
+  getPersonalRankings,
   searchItem,
   getItemById,
   getTrendingItems,
