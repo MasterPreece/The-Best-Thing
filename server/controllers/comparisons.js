@@ -260,8 +260,8 @@ const getRandomComparison = async (req, res) => {
             });
             
             resolve(groupMap);
-          });
-        });
+      });
+    });
       });
     }
   };
@@ -433,11 +433,11 @@ const getRandomComparison = async (req, res) => {
         }
         
         const shuffled = itemsWithDiversity.sort(() => Math.random() - 0.5);
-        let item1 = shuffled[0];
-        let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
-        if (item1.id === item2.id && shuffled.length > 1) {
-          item2 = shuffled[1];
-        }
+      let item1 = shuffled[0];
+      let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+      if (item1.id === item2.id && shuffled.length > 1) {
+        item2 = shuffled[1];
+      }
         
         console.log(`[WeightedRandom] Selected items: ${item1.title} (${item1.comparison_count} votes, weight: ${item1.vote_weight}, elo_bonus: ${item1.elo_bonus}, popularity: ${item1.popularity_bonus || 1.0}, decay: ${item1.recency_decay}${item1.diversityPenalty !== undefined ? `, diversity: ${item1.diversityPenalty}` : ''}) vs ${item2.title} (${item2.comparison_count} votes, weight: ${item2.vote_weight}, elo_bonus: ${item2.elo_bonus}, popularity: ${item2.popularity_bonus || 1.0}, decay: ${item2.recency_decay}${item2.diversityPenalty !== undefined ? `, diversity: ${item2.diversityPenalty}` : ''})`);
         res.json({ item1, item2 });
@@ -465,10 +465,10 @@ const getRandomComparison = async (req, res) => {
         // Try fallback: get any items with images, even if fewer than 2
       return db.query(`
           SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
-               c.id as category_id, c.name as category_name, c.slug as category_slug,
+             c.id as category_id, c.name as category_name, c.slug as category_slug,
                  COALESCE(comment_stats.comment_count, 0) as comment_count
-        FROM items i
-        LEFT JOIN categories c ON i.category_id = c.id
+      FROM items i
+      LEFT JOIN categories c ON i.category_id = c.id
           LEFT JOIN (
             SELECT item_id, COUNT(*) as comment_count 
             FROM comments 
@@ -479,7 +479,7 @@ const getRandomComparison = async (req, res) => {
             AND i.image_url != 'null' 
             AND i.image_url NOT LIKE '%placeholder.com%'
           ORDER BY RANDOM()
-        LIMIT 20
+      LIMIT 20
         `).then(fallbackResult => {
           if (!fallbackResult || !fallbackResult.rows || fallbackResult.rows.length < 2) {
             return res.status(404).json({ 
@@ -488,11 +488,11 @@ const getRandomComparison = async (req, res) => {
             });
           }
           const shuffled = fallbackResult.rows.sort(() => Math.random() - 0.5);
-          let item1 = shuffled[0];
-          let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
-          if (item1.id === item2.id && shuffled.length > 1) {
-            item2 = shuffled[1];
-          }
+      let item1 = shuffled[0];
+      let item2 = shuffled.find(item => item.id !== item1.id) || shuffled[1];
+      if (item1.id === item2.id && shuffled.length > 1) {
+        item2 = shuffled[1];
+      }
           console.log(`[WeightedRandom] Fallback: Selected ${item1.title} vs ${item2.title}`);
           res.json({ item1, item2 });
         }).catch(fallbackErr => {
@@ -500,8 +500,8 @@ const getRandomComparison = async (req, res) => {
           res.status(500).json({ 
             error: 'Failed to fetch comparison',
             message: fallbackErr.message 
-          });
-        });
+      });
+    });
       });
     } else {
       // SQLite version - use JavaScript to calculate weights, ELO bonus, recency decay, and diversity penalty
@@ -757,9 +757,9 @@ const submitVote = (req, res) => {
       // If rating_confidence column doesn't exist, try without it
       if (err.message && err.message.includes('rating_confidence')) {
         return dbInstance.get(`
-          SELECT elo_rating FROM items WHERE id = ?
-        `, [item1Id], (err, item1) => {
-          if (err) {
+    SELECT elo_rating FROM items WHERE id = ?
+  `, [item1Id], (err, item1) => {
+    if (err) {
             console.error('Error fetching item1:', err);
             return res.status(500).json({ error: 'Database error' });
           }
@@ -783,9 +783,9 @@ const submitVote = (req, res) => {
         // If rating_confidence column doesn't exist, try without it
         if (err.message && err.message.includes('rating_confidence')) {
           return dbInstance.get(`
-            SELECT elo_rating FROM items WHERE id = ?
-          `, [item2Id], (err, item2) => {
-            if (err) {
+      SELECT elo_rating FROM items WHERE id = ?
+    `, [item2Id], (err, item2) => {
+      if (err) {
               console.error('Error fetching item2:', err);
               return res.status(500).json({ error: 'Database error' });
             }
@@ -1120,8 +1120,128 @@ const submitSkip = (req, res) => {
   });
 };
 
+/**
+ * Get a specific comparison by item IDs (for sharing)
+ */
+const getSpecificComparison = async (req, res) => {
+  const dbInstance = db.getDb();
+  const dbType = db.getDbType();
+  
+  const item1Id = parseInt(req.query.item1);
+  const item2Id = parseInt(req.query.item2);
+  
+  // Validate input
+  if (!item1Id || !item2Id || isNaN(item1Id) || isNaN(item2Id)) {
+    return res.status(400).json({ 
+      error: 'Invalid item IDs',
+      message: 'Both item1 and item2 query parameters are required and must be valid numbers'
+    });
+  }
+  
+  if (item1Id === item2Id) {
+    return res.status(400).json({ 
+      error: 'Invalid comparison',
+      message: 'Item IDs must be different'
+    });
+  }
+  
+  try {
+    if (dbType === 'postgres') {
+      const result = await db.query(`
+        SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
+               i.familiarity_score, i.rating_confidence, i.wikipedia_pageviews,
+               c.id as category_id, c.name as category_name, c.slug as category_slug,
+               COALESCE(comment_stats.comment_count, 0) as comment_count
+        FROM items i
+        LEFT JOIN categories c ON i.category_id = c.id
+        LEFT JOIN (
+          SELECT item_id, COUNT(*) as comment_count 
+          FROM comments 
+          GROUP BY item_id
+        ) comment_stats ON i.id = comment_stats.item_id
+        WHERE i.id IN ($1, $2)
+          AND i.image_url IS NOT NULL AND i.image_url != '' AND i.image_url != 'null' 
+          AND i.image_url NOT LIKE '%placeholder.com%'
+      `, [item1Id, item2Id]);
+      
+      if (result.rows.length !== 2) {
+        return res.status(404).json({ 
+          error: 'Items not found',
+          message: 'One or both items not found or missing images'
+        });
+      }
+      
+      const item1 = result.rows.find(item => item.id === item1Id);
+      const item2 = result.rows.find(item => item.id === item2Id);
+      
+      if (!item1 || !item2) {
+        return res.status(404).json({ 
+          error: 'Items not found',
+          message: 'Could not find both items'
+        });
+      }
+      
+      res.json({ item1, item2 });
+    } else {
+      // SQLite version
+      return new Promise((resolve, reject) => {
+        dbInstance.all(`
+          SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
+                 i.familiarity_score, i.rating_confidence, i.wikipedia_pageviews,
+                 c.id as category_id, c.name as category_name, c.slug as category_slug,
+                 COALESCE(comment_stats.comment_count, 0) as comment_count
+          FROM items i
+          LEFT JOIN categories c ON i.category_id = c.id
+          LEFT JOIN (
+            SELECT item_id, COUNT(*) as comment_count 
+            FROM comments 
+            GROUP BY item_id
+          ) comment_stats ON i.id = comment_stats.item_id
+          WHERE i.id IN (?, ?)
+            AND i.image_url IS NOT NULL AND i.image_url != '' AND i.image_url != 'null' 
+            AND i.image_url NOT LIKE '%placeholder.com%'
+        `, [item1Id, item2Id], (err, rows) => {
+          if (err) {
+            console.error('Error fetching specific comparison:', err);
+            return res.status(500).json({ 
+              error: 'Failed to fetch comparison',
+              message: err.message 
+            });
+          }
+          
+          if (!rows || rows.length !== 2) {
+            return res.status(404).json({ 
+              error: 'Items not found',
+              message: 'One or both items not found or missing images'
+            });
+          }
+          
+          const item1 = rows.find(item => item.id === item1Id);
+          const item2 = rows.find(item => item.id === item2Id);
+          
+          if (!item1 || !item2) {
+            return res.status(404).json({ 
+              error: 'Items not found',
+              message: 'Could not find both items'
+            });
+          }
+          
+          res.json({ item1, item2 });
+        });
+      });
+    }
+  } catch (error) {
+    console.error('Error fetching specific comparison:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch comparison',
+      message: error.message || 'Unknown error occurred'
+    });
+  }
+};
+
 module.exports = {
   getRandomComparison,
+  getSpecificComparison,
   getSessionComparisonCount,
   submitVote,
   submitSkip

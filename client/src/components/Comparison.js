@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import Toast from './Toast';
 import AccountPrompt from './AccountPrompt';
@@ -10,6 +11,8 @@ import { animateNumber } from '../utils/numberAnimation';
 import './Comparison.css';
 
 const Comparison = ({ userSessionId }) => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [items, setItems] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -21,6 +24,7 @@ const Comparison = ({ userSessionId }) => {
   const [comparisonCount, setComparisonCount] = useState(0);
   const [globalStats, setGlobalStats] = useState(null);
   const [commentsModal, setCommentsModal] = useState({ open: false, itemId: null, itemTitle: null });
+  const [isSharedComparison, setIsSharedComparison] = useState(false);
   const { token, isAuthenticated } = useAuth();
   const statsRef = useRef(null);
 
@@ -32,7 +36,7 @@ const Comparison = ({ userSessionId }) => {
     setToast(null);
   };
 
-  const fetchComparison = useCallback(async () => {
+  const fetchComparison = useCallback(async (item1Id = null, item2Id = null) => {
     setLoading(true);
     setSelected(null);
     setError(null);
@@ -46,9 +50,30 @@ const Comparison = ({ userSessionId }) => {
     }
     
     try {
-      // Get session ID from localStorage to pass to backend for user-specific cooldown
-      const sessionId = localStorage.getItem('userSessionId');
-      const url = sessionId ? `/api/comparison?sessionId=${encodeURIComponent(sessionId)}` : '/api/comparison';
+      let url;
+      let isShared = false;
+      
+      // Check if this is a shared comparison (from URL params or function params)
+      if (item1Id && item2Id) {
+        url = `/api/comparison/specific?item1=${item1Id}&item2=${item2Id}`;
+        isShared = true;
+      } else {
+        // Check URL query parameters for shared comparison
+        const urlItem1 = searchParams.get('item1');
+        const urlItem2 = searchParams.get('item2');
+        
+        if (urlItem1 && urlItem2) {
+          url = `/api/comparison/specific?item1=${urlItem1}&item2=${urlItem2}`;
+          isShared = true;
+        } else {
+          // Get random comparison
+          const sessionId = localStorage.getItem('userSessionId');
+          url = sessionId ? `/api/comparison?sessionId=${encodeURIComponent(sessionId)}` : '/api/comparison';
+          isShared = false;
+        }
+      }
+      
+      setIsSharedComparison(isShared);
       const response = await axios.get(url);
       setItems(response.data);
       
@@ -69,8 +94,11 @@ const Comparison = ({ userSessionId }) => {
       }
     } catch (error) {
       console.error('Error fetching comparison:', error);
+      const isShared = item1Id && item2Id || searchParams.get('item1') && searchParams.get('item2');
       const errorMessage = error.response?.status === 404
-        ? 'Not enough items in database. The database is growing, please try again in a moment!'
+        ? isShared 
+          ? 'This shared comparison is no longer available. The items may have been removed.'
+          : 'Not enough items in database. The database is growing, please try again in a moment!'
         : error.code === 'ERR_NETWORK'
         ? 'Network error. Please check your internet connection.'
         : 'Failed to load comparison. Please try again.';
@@ -80,7 +108,7 @@ const Comparison = ({ userSessionId }) => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [searchParams]);
 
   const checkComparisonCount = useCallback(async () => {
     if (!userSessionId) return;
@@ -249,10 +277,11 @@ const Comparison = ({ userSessionId }) => {
   };
 
   const handleShare = async () => {
-    if (!items) return;
+    if (!items || !items.item1 || !items.item2) return;
     
     const shareText = `Which is better: ${items.item1.title} vs ${items.item2.title}? Vote on The Best Thing!`;
-    const shareUrl = window.location.href;
+    // Generate shareable URL with item IDs
+    const shareUrl = `${window.location.origin}/?item1=${items.item1.id}&item2=${items.item2.id}`;
     
     // Try native share API (mobile/desktop)
     if (navigator.share) {
@@ -273,6 +302,13 @@ const Comparison = ({ userSessionId }) => {
       // Fallback: copy to clipboard
       copyToClipboard(shareUrl, shareText);
     }
+  };
+  
+  const handleViewOriginal = () => {
+    // Clear query parameters and fetch a new random comparison
+    setSearchParams({});
+    setIsSharedComparison(false);
+    fetchComparison();
   };
 
   const copyToClipboard = (url, text) => {
@@ -536,6 +572,18 @@ const Comparison = ({ userSessionId }) => {
             <div className="stat-badge highlight">
               <strong className="stat-today-comparisons">{globalStats.todayComparisons.toLocaleString()}</strong> today
             </div>
+          </div>
+        )}
+        {isSharedComparison && (
+          <div className="shared-comparison-badge">
+            <span>🔗 Shared Comparison</span>
+            <button
+              onClick={handleViewOriginal}
+              className="view-original-button"
+              title="Get a new random comparison"
+            >
+              Get New Comparison
+            </button>
           </div>
         )}
         <div className="comparison-controls">

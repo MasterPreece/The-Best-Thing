@@ -42,6 +42,7 @@ const upload = multer({
 
 // Comparisons
 router.get('/comparison', optionalAuthenticate, comparisonsController.getRandomComparison);
+router.get('/comparison/specific', optionalAuthenticate, comparisonsController.getSpecificComparison);
 router.get('/comparison/count', comparisonsController.getSessionComparisonCount);
 router.post('/comparison/vote', optionalAuthenticate, comparisonsController.submitVote);
 router.post('/comparison/skip', optionalAuthenticate, comparisonsController.submitSkip);
