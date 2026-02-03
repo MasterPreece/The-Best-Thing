@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import Toast from './Toast';
 import AccountPrompt from './AccountPrompt';
@@ -12,7 +12,6 @@ import './Comparison.css';
 
 const Comparison = ({ userSessionId }) => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
   const [items, setItems] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -94,7 +93,7 @@ const Comparison = ({ userSessionId }) => {
       }
     } catch (error) {
       console.error('Error fetching comparison:', error);
-      const isShared = item1Id && item2Id || searchParams.get('item1') && searchParams.get('item2');
+      const isShared = (item1Id && item2Id) || (searchParams.get('item1') && searchParams.get('item2'));
       const errorMessage = error.response?.status === 404
         ? isShared 
           ? 'This shared comparison is no longer available. The items may have been removed.'
