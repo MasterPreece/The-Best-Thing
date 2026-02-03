@@ -1184,50 +1184,48 @@ const getSpecificComparison = async (req, res) => {
       res.json({ item1, item2 });
     } else {
       // SQLite version
-      return new Promise((resolve, reject) => {
-        dbInstance.all(`
-          SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
-                 i.familiarity_score, i.rating_confidence, i.wikipedia_pageviews,
-                 c.id as category_id, c.name as category_name, c.slug as category_slug,
-                 COALESCE(comment_stats.comment_count, 0) as comment_count
-          FROM items i
-          LEFT JOIN categories c ON i.category_id = c.id
-          LEFT JOIN (
-            SELECT item_id, COUNT(*) as comment_count 
-            FROM comments 
-            GROUP BY item_id
-          ) comment_stats ON i.id = comment_stats.item_id
-          WHERE i.id IN (?, ?)
-            AND i.image_url IS NOT NULL AND i.image_url != '' AND i.image_url != 'null' 
-            AND i.image_url NOT LIKE '%placeholder.com%'
-        `, [item1Id, item2Id], (err, rows) => {
-          if (err) {
-            console.error('Error fetching specific comparison:', err);
-            return res.status(500).json({ 
-              error: 'Failed to fetch comparison',
-              message: err.message 
-            });
-          }
-          
-          if (!rows || rows.length !== 2) {
-            return res.status(404).json({ 
-              error: 'Items not found',
-              message: 'One or both items not found or missing images'
-            });
-          }
-          
-          const item1 = rows.find(item => item.id === item1Id);
-          const item2 = rows.find(item => item.id === item2Id);
-          
-          if (!item1 || !item2) {
-            return res.status(404).json({ 
-              error: 'Items not found',
-              message: 'Could not find both items'
-            });
-          }
-          
-          res.json({ item1, item2 });
-        });
+      dbInstance.all(`
+        SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
+               i.familiarity_score, i.rating_confidence, i.wikipedia_pageviews,
+               c.id as category_id, c.name as category_name, c.slug as category_slug,
+               COALESCE(comment_stats.comment_count, 0) as comment_count
+        FROM items i
+        LEFT JOIN categories c ON i.category_id = c.id
+        LEFT JOIN (
+          SELECT item_id, COUNT(*) as comment_count 
+          FROM comments 
+          GROUP BY item_id
+        ) comment_stats ON i.id = comment_stats.item_id
+        WHERE i.id IN (?, ?)
+          AND i.image_url IS NOT NULL AND i.image_url != '' AND i.image_url != 'null' 
+          AND i.image_url NOT LIKE '%placeholder.com%'
+      `, [item1Id, item2Id], (err, rows) => {
+        if (err) {
+          console.error('Error fetching specific comparison:', err);
+          return res.status(500).json({ 
+            error: 'Failed to fetch comparison',
+            message: err.message 
+          });
+        }
+        
+        if (!rows || rows.length !== 2) {
+          return res.status(404).json({ 
+            error: 'Items not found',
+            message: 'One or both items not found or missing images'
+          });
+        }
+        
+        const item1 = rows.find(item => item.id === item1Id);
+        const item2 = rows.find(item => item.id === item2Id);
+        
+        if (!item1 || !item2) {
+          return res.status(404).json({ 
+            error: 'Items not found',
+            message: 'Could not find both items'
+          });
+        }
+        
+        res.json({ item1, item2 });
       });
     }
   } catch (error) {
