@@ -35,6 +35,24 @@ const Comparison = ({ userSessionId }) => {
     setToast(null);
   };
 
+  // Preload images to ensure they're ready before displaying
+  const preloadImages = (imageUrls) => {
+    return Promise.all(
+      imageUrls
+        .filter(url => url && url !== 'null' && !url.includes('placeholder.com'))
+        .map(url => {
+          return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = resolve;
+            img.onerror = resolve; // Resolve even on error to not block
+            img.src = url;
+            // Timeout after 2 seconds to not block forever
+            setTimeout(resolve, 2000);
+          });
+        })
+    );
+  };
+
   const fetchComparison = useCallback(async (item1Id = null, item2Id = null) => {
     setLoading(true);
     setSelected(null);
@@ -74,6 +92,21 @@ const Comparison = ({ userSessionId }) => {
       
       setIsSharedComparison(isShared);
       const response = await axios.get(url);
+      
+      // Preload images before setting items (but don't wait too long)
+      // This ensures images are ready when we render, but doesn't block state updates
+      const imageUrls = [
+        response.data?.item1?.image_url,
+        response.data?.item2?.image_url
+      ].filter(Boolean);
+      
+      // Preload images with a max wait time to not delay state updates too much
+      await Promise.race([
+        preloadImages(imageUrls),
+        new Promise(resolve => setTimeout(resolve, 300))
+      ]);
+      
+      // Now set items - images should be preloaded
       setItems(response.data);
       
       // Fetch detailed stats for hover display
@@ -200,6 +233,7 @@ const Comparison = ({ userSessionId }) => {
       }
 
       // Wait a moment to show the selection with animation, then fetch new comparison
+      // Keep sequential to avoid state race conditions, but reduce delays slightly
       setTimeout(() => {
         // Add a brief fade-out effect before loading next
         if (document.querySelector('.comparison-grid')) {
@@ -208,14 +242,15 @@ const Comparison = ({ userSessionId }) => {
         }
         
         setTimeout(() => {
+          // Fetch new comparison sequentially (not in background) to maintain state order
           fetchComparison();
           fetchGlobalStats(); // Update global stats after vote
           // Update comparison count
           if (!isAuthenticated && userSessionId) {
             checkComparisonCount();
           }
-        }, 200);
-      }, 800);
+        }, 150);
+      }, 600);
     } catch (error) {
       console.error('Error submitting vote:', error);
       const errorMessage = error.response?.status === 400
@@ -406,7 +441,7 @@ const Comparison = ({ userSessionId }) => {
                 src={items.item1.image_url}
                 alt={items.item1.title}
                 className="item-image"
-                loading="lazy"
+                loading="eager"
                 onError={(e) => {
                   e.target.src = 'https://via.placeholder.com/400x300?text=No+Image';
                 }}
@@ -482,7 +517,7 @@ const Comparison = ({ userSessionId }) => {
                 src={items.item2.image_url}
                 alt={items.item2.title}
                 className="item-image"
-                loading="lazy"
+                loading="eager"
                 onError={(e) => {
                   e.target.src = 'https://via.placeholder.com/400x300?text=No+Image';
                 }}

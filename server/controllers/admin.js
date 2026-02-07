@@ -759,6 +759,10 @@ const updateSettings = async (req, res) => {
         if (isNaN(val) || val < 1) return 'must be a positive integer';
         return null;
       },
+      wikipedia_auto_fetch_enabled: (v) => {
+        if (v !== 'true' && v !== 'false') return 'must be true or false';
+        return null;
+      },
       items_needing_votes_confidence_threshold: (v) => {
         const val = parseFloat(v);
         if (isNaN(val) || val < 0 || val > 1) return 'must be between 0 and 1';
@@ -833,6 +837,14 @@ const updateSettings = async (req, res) => {
             // Invalidate cache
             const { invalidateSettingsCache } = require('../utils/settings');
             invalidateSettingsCache();
+            
+            // Restart scheduler if auto-fetch setting was changed
+            if (updates.some(u => u.key === 'wikipedia_auto_fetch_enabled' || u.key === 'scheduler_interval_minutes')) {
+              const scheduler = require('../utils/scheduler');
+              scheduler.restartScheduler().catch(err => {
+                console.error('Error restarting scheduler:', err);
+              });
+            }
             
             res.json({ 
               success: true, 

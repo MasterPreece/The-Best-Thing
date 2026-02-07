@@ -376,6 +376,7 @@ const createTables = async () => {
           ('growth_batch_size', '5', 'Items added during growth phase'),
           ('growth_interval_minutes', '30', 'Minutes between growth batches'),
           ('scheduler_interval_minutes', '10', 'Minutes between auto-fetch checks'),
+          ('wikipedia_auto_fetch_enabled', 'false', 'Enable/disable automatic Wikipedia article fetching'),
           ('items_needing_votes_confidence_threshold', '0.8', 'Confidence threshold for items needing votes'),
           ('items_needing_votes_comparison_threshold', '20', 'Comparison count threshold for items needing votes')
         ON CONFLICT (key) DO NOTHING
@@ -565,6 +566,7 @@ const createTables = async () => {
                                                       ['growth_batch_size', '5', 'Items added during growth phase'],
                                                       ['growth_interval_minutes', '30', 'Minutes between growth batches'],
                                                       ['scheduler_interval_minutes', '10', 'Minutes between auto-fetch checks'],
+                                                      ['wikipedia_auto_fetch_enabled', 'false', 'Enable/disable automatic Wikipedia article fetching'],
                                                       ['items_needing_votes_confidence_threshold', '0.8', 'Confidence threshold for items needing votes'],
                                                       ['items_needing_votes_comparison_threshold', '20', 'Comparison count threshold for items needing votes']
                                                     ];

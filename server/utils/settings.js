@@ -100,6 +100,10 @@ const getGrowthIntervalMinutes = async () => parseInt(await getSetting('growth_i
 
 // Scheduler Settings
 const getSchedulerIntervalMinutes = async () => parseInt(await getSetting('scheduler_interval_minutes', '10', parseInt)) || 10;
+const getWikipediaAutoFetchEnabled = async () => {
+  const value = await getSetting('wikipedia_auto_fetch_enabled', 'false', (v) => v === 'true' || v === true);
+  return value === true || value === 'true';
+};
 
 // Selection Algorithm Settings
 const getItemsNeedingVotesConfidenceThreshold = async () => parseFloat(await getSetting('items_needing_votes_confidence_threshold', '0.8', parseFloat)) || 0.8;
@@ -147,6 +151,7 @@ module.exports = {
   getGrowthIntervalMinutes,
   // Scheduler
   getSchedulerIntervalMinutes,
+  getWikipediaAutoFetchEnabled,
   // Selection Algorithm
   getItemsNeedingVotesConfidenceThreshold,
   getItemsNeedingVotesComparisonThreshold,

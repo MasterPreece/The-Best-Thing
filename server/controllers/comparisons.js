@@ -344,13 +344,13 @@ const getRandomComparison = async (req, res) => {
       return db.query(`
         ${allCTEs}
         SELECT i.id, i.title, i.image_url, i.description, i.elo_rating, i.comparison_count,
-               i.familiarity_score, i.rating_confidence,
+               i.familiarity_score, i.rating_confidence, i.wikipedia_pageviews,
                c.id as category_id, c.name as category_name, c.slug as category_slug,
                COALESCE(comment_stats.comment_count, 0) as comment_count,
                CASE 
-                 WHEN i.comparison_count = 0 THEN 500.0
-                 WHEN i.comparison_count BETWEEN 1 AND 5 THEN 100.0
-                 WHEN i.comparison_count BETWEEN 6 AND 20 THEN 10.0
+                 WHEN i.comparison_count = 0 THEN 50.0
+                 WHEN i.comparison_count BETWEEN 1 AND 5 THEN 20.0
+                 WHEN i.comparison_count BETWEEN 6 AND 20 THEN 5.0
                  ELSE 1.0
                END as vote_weight,
                ${recencySelect} as recency_decay,
@@ -372,11 +372,12 @@ const getRandomComparison = async (req, res) => {
           AND i.image_url NOT LIKE '%placeholder.com%'
         ORDER BY (
           (CASE 
-            WHEN i.comparison_count = 0 THEN 500.0
-            WHEN i.comparison_count BETWEEN 1 AND 5 THEN 100.0
-            WHEN i.comparison_count BETWEEN 6 AND 20 THEN 10.0
+            WHEN i.comparison_count = 0 THEN 50.0
+            WHEN i.comparison_count BETWEEN 1 AND 5 THEN 20.0
+            WHEN i.comparison_count BETWEEN 6 AND 20 THEN 5.0
             ELSE 1.0
           END) * 
+          GREATEST(0.1, COALESCE(i.familiarity_score, 0.0) / 100.0) * 
           (CASE 
             WHEN i.elo_rating >= et.threshold 
             THEN LEAST(1.0 + GREATEST((i.elo_rating - et.threshold) / 500.0, 0), 5.0)
@@ -395,6 +396,21 @@ const getRandomComparison = async (req, res) => {
         }
         
         // Apply diversity penalty and popularity bonus if enabled
+        // Calculate popularity percentiles if enabled
+        let percentile50, percentile75, percentile90;
+        if (popularityEnabled && result.rows.length > 0) {
+          const itemsWithPageviews = result.rows
+            .filter(r => r.wikipedia_pageviews && r.wikipedia_pageviews > 0)
+            .map(r => r.wikipedia_pageviews)
+            .sort((a, b) => a - b);
+          
+          if (itemsWithPageviews.length > 0) {
+            percentile50 = itemsWithPageviews[Math.floor(itemsWithPageviews.length * 0.5)];
+            percentile75 = itemsWithPageviews[Math.floor(itemsWithPageviews.length * 0.75)];
+            percentile90 = itemsWithPageviews[Math.floor(itemsWithPageviews.length * 0.9)];
+          }
+        }
+        
         let itemsWithDiversity = result.rows;
         if (diversityEnabled && recentlySeenGroups.size > 0) {
           itemsWithDiversity = result.rows.map(item => {
@@ -408,15 +424,20 @@ const getRandomComparison = async (req, res) => {
             
             // Calculate final weight with diversity penalty and popularity bonus
             const voteWeight = item.vote_weight || 1.0;
+            const familiarityScore = item.familiarity_score || 0;
+            const familiarityMultiplier = Math.max(0.1, familiarityScore / 100.0);
             const eloBonus = item.elo_bonus || 1.0;
             const recencyDecay = item.recency_decay || 1.0;
-            const popularityBonus = item.popularity_bonus || 1.0;
-            const finalWeight = voteWeight * eloBonus * recencyDecay * diversityPenalty * popularityBonus;
+            const popularityBonus = popularityEnabled && percentile50 
+              ? calculatePopularityBonus(item.wikipedia_pageviews || 0, percentile50, percentile75, percentile90, popularityStrength)
+              : 1.0;
+            const finalWeight = voteWeight * familiarityMultiplier * eloBonus * recencyDecay * diversityPenalty * popularityBonus;
             
             return {
               ...item,
               similarityGroup,
               diversityPenalty,
+              familiarityMultiplier,
               finalWeight
             };
           });
@@ -426,6 +447,51 @@ const getRandomComparison = async (req, res) => {
             const weightDiff = (b.finalWeight || 0) - (a.finalWeight || 0);
             if (Math.abs(weightDiff) < 0.1) {
               return Math.random() - 0.5; // Randomize if weights are very close
+            }
+            return weightDiff;
+          });
+          itemsWithDiversity = itemsWithDiversity.slice(0, 20);
+        } else {
+          // Even if diversity is disabled, we still need to apply familiarity multiplier and popularity bonus
+          // Calculate popularity percentiles if enabled
+          let percentile50, percentile75, percentile90;
+          if (popularityEnabled && result.rows.length > 0) {
+            const itemsWithPageviews = result.rows
+              .filter(r => r.wikipedia_pageviews && r.wikipedia_pageviews > 0)
+              .map(r => r.wikipedia_pageviews)
+              .sort((a, b) => a - b);
+            
+            if (itemsWithPageviews.length > 0) {
+              percentile50 = itemsWithPageviews[Math.floor(itemsWithPageviews.length * 0.5)];
+              percentile75 = itemsWithPageviews[Math.floor(itemsWithPageviews.length * 0.75)];
+              percentile90 = itemsWithPageviews[Math.floor(itemsWithPageviews.length * 0.9)];
+            }
+          }
+          
+          itemsWithDiversity = result.rows.map(item => {
+            const voteWeight = item.vote_weight || 1.0;
+            const familiarityScore = item.familiarity_score || 0;
+            const familiarityMultiplier = Math.max(0.1, familiarityScore / 100.0);
+            const eloBonus = item.elo_bonus || 1.0;
+            const recencyDecay = item.recency_decay || 1.0;
+            const popularityBonus = popularityEnabled && percentile50 
+              ? calculatePopularityBonus(item.wikipedia_pageviews || 0, percentile50, percentile75, percentile90, popularityStrength)
+              : 1.0;
+            const finalWeight = voteWeight * familiarityMultiplier * eloBonus * recencyDecay * popularityBonus;
+            
+            return {
+              ...item,
+              familiarityMultiplier,
+              popularityBonus,
+              finalWeight
+            };
+          });
+          
+          // Sort by final weight and take top 20
+          itemsWithDiversity.sort((a, b) => {
+            const weightDiff = (b.finalWeight || 0) - (a.finalWeight || 0);
+            if (Math.abs(weightDiff) < 0.1) {
+              return Math.random() - 0.5;
             }
             return weightDiff;
           });
@@ -457,7 +523,11 @@ const getRandomComparison = async (req, res) => {
             item2 = shuffled[1];
         }
         
-        console.log(`[WeightedRandom] Selected items: ${item1.title} (${item1.comparison_count} votes, weight: ${item1.vote_weight}, elo_bonus: ${item1.elo_bonus}, decay: ${item1.recency_decay}) vs ${item2.title} (${item2.comparison_count} votes, weight: ${item2.vote_weight}, elo_bonus: ${item2.elo_bonus}, decay: ${item2.recency_decay})`);
+        const item1Familiarity = item1.familiarity_score || 0;
+        const item1FamMult = Math.max(0.1, item1Familiarity / 100.0);
+        const item2Familiarity = item2.familiarity_score || 0;
+        const item2FamMult = Math.max(0.1, item2Familiarity / 100.0);
+        console.log(`[WeightedRandom] Selected items: ${item1.title} (${item1.comparison_count} votes, weight: ${item1.vote_weight}, familiarity: ${item1Familiarity} (${item1FamMult.toFixed(2)}x), elo_bonus: ${item1.elo_bonus}, decay: ${item1.recency_decay}) vs ${item2.title} (${item2.comparison_count} votes, weight: ${item2.vote_weight}, familiarity: ${item2Familiarity} (${item2FamMult.toFixed(2)}x), elo_bonus: ${item2.elo_bonus}, decay: ${item2.recency_decay})`);
         res.json({ item1, item2 });
       }).catch(err => {
         console.error('[WeightedRandom] Error in PostgreSQL weighted random selection:', err);
@@ -523,9 +593,9 @@ const getRandomComparison = async (req, res) => {
           const weightedItems = rows.map(item => {
             let voteWeight = 1.0;
             const comparisonCount = item.comparison_count || 0;
-            if (comparisonCount === 0) voteWeight = 500.0;
-            else if (comparisonCount >= 1 && comparisonCount <= 5) voteWeight = 100.0;
-            else if (comparisonCount >= 6 && comparisonCount <= 20) voteWeight = 10.0;
+            if (comparisonCount === 0) voteWeight = 50.0;
+            else if (comparisonCount >= 1 && comparisonCount <= 5) voteWeight = 20.0;
+            else if (comparisonCount >= 6 && comparisonCount <= 20) voteWeight = 5.0;
             
             // Calculate ELO bonus (1x to 5x multiplier for top 20%)
             const eloRating = item.elo_rating || 1500;
@@ -552,6 +622,10 @@ const getRandomComparison = async (req, res) => {
                 diversityPenalty = calculateDiversityPenalty(groupComparisonsAgo, penaltyStrength);
               }
             }
+            
+            // Calculate familiarity multiplier
+            const familiarityScore = item.familiarity_score || 0;
+            const familiarityMultiplier = Math.max(0.1, familiarityScore / 100.0);
             
             // Calculate popularity bonus
             let popularityBonus = 1.0;
@@ -580,10 +654,11 @@ const getRandomComparison = async (req, res) => {
               }
             }
             
-            const finalWeight = voteWeight * eloBonus * recencyDecay * diversityPenalty * popularityBonus;
+            const finalWeight = voteWeight * familiarityMultiplier * eloBonus * recencyDecay * diversityPenalty * popularityBonus;
             return { 
               ...item, 
               voteWeight, 
+              familiarityMultiplier,
               eloBonus, 
               recencyDecay, 
               diversityPenalty,
